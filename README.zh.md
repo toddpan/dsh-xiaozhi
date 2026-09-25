@@ -3,7 +3,11 @@
 把小智（Xiaozhi）语音助手接入 **DeepSeek Harness（DSH）Web**：DSH 作为 **MCP 工具提供方**，
 通过 WebSocket 上的 JSON-RPC 2.0 把工作区、会话、模型、设置、文件等能力封装成工具，供小智语音调用。
 
-> English: see [README.md](./README.md) · 安装与验证：[INSTALL.md](./INSTALL.md) · 工具清单：[docs/TOOLS.md](./docs/TOOLS.md)
+**中文** · [**English**](./README.md) · [安装与验证](./INSTALL.md) · [工具清单](./docs/TOOLS.md)
+
+> 把小智（Xiaozhi）语音助手接入 DSH Web：DSH 作为 MCP 工具提供方，把 35 个 DSH Web 接口封装成 16 个
+> 语音友好工具，自带 DSH Web 设置页。
+> Connect the Xiaozhi voice assistant to DSH Web as an MCP tool provider — 35 endpoints, 16 voice-friendly tools.
 
 > 实施前的设计提案（架构 ADR、v2 复核、设置页 UX 走查）归档在 [docs/design/](./docs/design/)，其中与实际交付不一致的地方已逐条注明。
 

@@ -4,7 +4,11 @@ Connects the **Xiaozhi** (小智) voice assistant to **DeepSeek Harness (DSH) We
 **MCP tool provider**, exposing workspaces, sessions, models, settings and files as tools a voice
 assistant can call over JSON-RPC 2.0 on a WebSocket.
 
-> 中文文档见 [README.zh.md](./README.zh.md) · Install & verify: [INSTALL.md](./INSTALL.md) · Tool reference: [docs/TOOLS.md](./docs/TOOLS.md)
+**English** · [**中文文档**](./README.zh.md) · [Install & verify](./INSTALL.md) · [Tool reference](./docs/TOOLS.md)
+
+> Connect the Xiaozhi voice assistant to DSH Web: DSH is the MCP tool provider, exposing 35 DSH Web
+> endpoints as 16 voice-friendly tools, with a DSH Web settings page.
+> 把小智（Xiaozhi）语音助手接入 DSH Web：DSH 作为 MCP 工具提供方，把 35 个接口封装成 16 个语音友好工具，自带设置页。
 
 > The pre-implementation design proposals (architecture ADR, v2 review, settings UX walkthrough) are archived in [docs/design/](./docs/design/) with every divergence from the shipped code listed.
 
