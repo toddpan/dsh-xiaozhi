@@ -1,0 +1,75 @@
+{
+  "name": "dsh-xiaozhi",
+  "version": "0.1.0",
+  "description": "Expose DeepSeek Harness (DSH) Web capabilities to the Xiaozhi voice assistant over MCP: a self-contained DSH bundle that registers DSH as an MCP tool provider on a Xiaozhi MCP endpoint (or as a Xiaozhi-connectable MCP server), plus a DSH Web settings page. · 把小智（Xiaozhi）语音助手接入 DSH：通过 MCP 协议把 DSH Web 的工作区/会话/模型/设置/文件等能力封装成工具供小智语音调用，自带 DSH Web 设置页面。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "locale/*.json",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "INSTALL.md",
+    "LICENSE",
+    "NOTICE",
+    "docs",
+    "scripts"
+  ],
+  "license": "BSD-3-Clause",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "xiaozhi",
+    "小智",
+    "mcp",
+    "json-rpc",
+    "websocket",
+    "voice",
+    "esp32"
+  ],
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --test-timeout=30000 \"test/*.test.mjs\""
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.0-0 <0.1.1-0 || >=0.1.1-0 <0.1.2-0 || >=0.1.2-0 <0.1.3-0 || >=0.1.3-0 <0.1.4-0 || >=0.1.4-0 <0.1.5-0 || >=0.1.5-0 <0.1.6-0 || >=0.1.6-0 <0.1.7-0 || >=0.1.7-0 <0.1.8-0 || >=0.1.8-0 <0.1.9-0 || >=0.1.9-0 <0.1.10-0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  },
+  "icon": "./icon.svg",
+  "meta": {
+    "title": "小智语音接入 / Xiaozhi voice access",
+    "description": "把小智语音助手接入 DSH：DSH 作为 MCP 工具提供方，通过 WebSocket JSON-RPC 暴露工作区/会话/模型/设置/文件等能力供语音调用，并自带 DSH Web 设置页面。 Connect the Xiaozhi voice assistant to DSH as an MCP tool provider, with a DSH Web settings page."
+  },
+  "author": "dsh-xiaozhi contributors",
+  "homepage": "https://github.com/toddpan/dsh-webapi"
+}

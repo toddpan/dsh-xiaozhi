@@ -1,0 +1,12 @@
+# Dependencies (the plugin is loaded from the profile's node_modules)
+node_modules/
+
+# Build leftovers / local scratch
+*.log
+*.tgz
+/tmp/
+.DS_Store
+
+# Local overrides are stored outside the package (~/.dsh/dsh-xiaozhi/settings.json),
+# never here - but keep a stray copy from ever being committed.
+settings.json

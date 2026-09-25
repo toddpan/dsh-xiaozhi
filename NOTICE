@@ -1,0 +1,57 @@
+# NOTICE
+
+dsh-xiaozhi
+Copyright (c) 2026. BSD-3-Clause. See LICENSE.
+
+## Derived work
+
+This plugin is a fork of **`@dsh-external/dsh-web-service` v0.1.11**
+(`https://github.com/toddpan/dsh-webapi`), licensed BSD-3-Clause,
+Copyright (c) 2026 toddpan (潘祖继).
+
+The files under `src/dshapi/` are a **verbatim copy** of that project's
+`src/dshapi/` directory. They are deliberately left unmodified so the copy can
+be diffed against upstream:
+
+| copied file | origin | note |
+| --- | --- | --- |
+| `src/dshapi/router.ts` | upstream `src/dshapi/router.ts` | `HttpRouter`, `sendJson`, body readers |
+| `src/dshapi/types.ts` | upstream | response envelope types |
+| `src/dshapi/workspaces.ts` | upstream | `/workspaces*` routes |
+| `src/dshapi/sessions.ts` | upstream | `/sessions*` routes |
+| `src/dshapi/models.ts` | upstream | `/models`, `/providers`, `/presets` |
+| `src/dshapi/streaming.ts` | upstream | `/prompt`, `/prompt-stream`, SSE |
+| `src/dshapi/files.ts` | upstream | `/sessions/:id/files*` |
+| `src/dshapi/skills.ts` | upstream | `/sessions/:id/skills` |
+| `src/dshapi/skill-utils.ts` | upstream | shared skill helpers |
+| `src/dshapi/user-questions.ts` | upstream | `/sessions/:id/questions`, `/answers` |
+| `src/dshapi/openapi.ts` | upstream | `/docs`, `/openapi.json` |
+
+`src/dshapi/service.ts` is **new** in this fork. It is the single seam that
+assembles the copied route modules into one router, so upstream changes remain
+a clean three-way diff. No copied file is patched.
+
+## What this fork changes
+
+* **Role reversal.** Upstream exposes DSH to HTTP callers only. Here DSH also
+  speaks the Xiaozhi MCP protocol (JSON-RPC 2.0 over WebSocket) as the **tool
+  provider**, so the assistant can call DSH capabilities by voice.
+* **In-process invocation.** MCP tool calls reach the copied routes through an
+  in-process `LocalInvoker` shim instead of loopback HTTP, so the plugin does
+  not have to guess the host, port, or auth of its own DSH instance.
+* **No inbound port required.** The default `endpoint` transport dials *out* to
+  the Xiaozhi MCP access point; the `server` transport is opt-in.
+* **Settings page.** A browser half registers into the DSH Web
+  `settings.section` slot with an admin API at `/dsh-xiaozhi/admin`.
+* **No runtime dependency on the upstream package.** The copied routes are
+  compiled into this bundle, so `@dsh-external/dsh-web-service` does **not**
+  need to be installed. Installing both is supported but redundant: they mount
+  at different paths (`/api/v1` upstream, `/dsh-xiaozhi/api/v1` here).
+
+## Third-party code
+
+* Node.js built-in modules only. There is no `ws`, `ajv`, or other runtime
+  dependency: `src/ws.ts` implements RFC 6455 framing directly.
+* `@deepseek-ai/cordis`, `@deepseek-ai/schemastery` and
+  `@deepseek-ai/dsh-host-webserver` are DSH peer dependencies, resolved from the
+  DSH installation at runtime.

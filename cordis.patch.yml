@@ -1,0 +1,13 @@
+# dsh-xiaozhi bundle layer.
+#
+# Inserts one plugin row: the Host half owns the MCP endpoint/server, the tool
+# registry, and the bundled DSH Web REST layer; the Client half (declared by
+# `dsh.client` in package.json) renders the settings page into `settings.section`.
+#
+# All values below are defaults: every field can be overridden in a profile's
+# own cordis.patch.yml, and the settings page persists runtime overrides
+# separately (see README "配置分层").
+- insert:
+    - id: dsh-xiaozhi
+      name: dsh-xiaozhi
+      config: {}

@@ -1,0 +1,4 @@
+{
+  "title": "Xiaozhi voice access",
+  "description": "Connect the Xiaozhi voice assistant to DSH: it exposes workspaces, sessions, models, settings and files as MCP tools a voice assistant can call. DSH acts as the MCP tool provider over an outbound access point or a self-hosted server, and ships a DSH Web settings page."
+}

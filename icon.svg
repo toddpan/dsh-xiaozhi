@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="dsh-xiaozhi">
+  <defs>
+    <linearGradient id="dshx-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6df6"/>
+      <stop offset="1" stop-color="#7a4bf0"/>
+    </linearGradient>
+    <linearGradient id="dshx-wave" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d9e4ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded app tile -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#dshx-bg)"/>
+
+  <!-- Microphone capsule: the Xiaozhi voice input -->
+  <rect x="27" y="14" width="10" height="20" rx="5" fill="url(#dshx-wave)"/>
+  <path d="M22 30a8 8 0 0 0 16 0" fill="none" stroke="#ffffff" stroke-width="3"
+        stroke-linecap="round"/>
+  <path d="M30 38v5" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Outbound waveform: DSH speaks MCP over the wire -->
+  <path d="M12 50h6l3-5 3 9 3-7 3 3h4" fill="none" stroke="#ffffff" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  <path d="M38 50h4l3-4 3 6 2-4h2" fill="none" stroke="#ffffff" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+</svg>
