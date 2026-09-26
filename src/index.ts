@@ -14,12 +14,15 @@ import z from '@deepseek-ai/schemastery'
 import {
   Config as ConfigShape,
   clearOverrides,
+  effectiveEndpoints,
+  mergeMaskedEndpoints,
   readOverrides,
   redactConfig,
   resolveConfig,
   resolveSettingsFile,
   writeOverrides,
   type Config as XiaozhiConfig,
+  type EndpointDevice,
   type ResolvedConfig,
 } from './config.js'
 import { LocalInvoker } from './dispatcher.js'
@@ -88,12 +91,17 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
 
     // ---- MCP capability runtime + tool surface --------------------------
     const status = new TransportStatus()
+    // One endpoint transport per bound device, each with its own connection
+    // state; `serverTransport` hosts inbound clients instead. Assigned in the
+    // transport section below; the closures only read them per request.
+    let endpointDevices: EndpointDeviceRuntime[] = []
+    let serverTransport: ServerTransport | undefined
     const capabilities = new CapabilityRuntime({
       ctx,
       invoker,
       config: () => resolved,
       apiBase: () => apiBase,
-      mcpStatus: () => transportSnapshot(status, transport, resolved),
+      mcpStatus: () => aggregateSnapshot(endpointDevices, serverTransport, status, resolved),
       log: message => log.push(message),
     })
     const runner = new ToolRunner({
@@ -121,12 +129,11 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
     // Constructed here but deliberately *started* after the HTTP routes are
     // mounted: `webServer.register` can throw (a duplicate path), and a
     // transport started first would then be left running with nobody owning it.
-    let transport: EndpointTransport | ServerTransport | undefined
     if (!config.enabled) {
       status.setState('disabled')
       log.push('MCP transport disabled by config')
     } else if (config.mode === 'server') {
-      transport = new ServerTransport({
+      serverTransport = new ServerTransport({
         ctx,
         config: () => resolved,
         status,
@@ -134,12 +141,23 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
         log: message => log.push(message),
       })
     } else {
-      transport = new EndpointTransport({
-        ctx,
-        config: () => resolved,
-        status,
-        createSession: (connection: WsConnection) => createSession(connection),
-        log: message => log.push(message),
+      endpointDevices = effectiveEndpoints(config).map(device => {
+        // Live lookup by id, so a reconnect dials the URL that is configured
+        // *now*; fall back to the boot-time device when it has vanished.
+        const live = (): EndpointDevice | undefined =>
+          effectiveEndpoints(resolved).find(candidate => candidate.id === device.id)
+        const deviceStatus = new TransportStatus()
+        const deviceTransport = new EndpointTransport({
+          ctx,
+          config: () => resolved,
+          url: () => live()?.url ?? device.url,
+          headers: () => ({ ...resolved.endpointHeaders, ...(live()?.headers ?? device.headers ?? {}) }),
+          describe: { id: device.id, name: device.name },
+          status: deviceStatus,
+          createSession: (connection: WsConnection) => createSession(connection),
+          log: message => log.push(`[${device.name || device.id}] ${message}`),
+        })
+        return { id: device.id, name: device.name ?? '', status: deviceStatus, transport: deviceTransport }
       })
     }
 
@@ -163,18 +181,29 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
     }
 
     const adminRouter = createAdminRouter({
-      status: async () => adminStatus(status, transport, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log),
+      status: async () =>
+        adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log),
       patchConfig: async patch => {
-        writeOverrides(rowConfig, patch)
-        log.push(`config updated: ${Object.keys(patch).join(', ') || '(empty)'}`)
+        // Device rows arrive with masked URLs/headers from the settings page;
+        // resolve them against the stored config before anything is written.
+        let effective = patch
+        if (Array.isArray(patch.endpoints)) {
+          const merged = mergeMaskedEndpoints(rowConfig, patch)
+          effective = { ...patch, endpoints: merged.endpoints }
+          if (merged.dropped > 0) {
+            log.push(`config: dropped ${merged.dropped} device row(s) whose masked URL matched nothing stored`)
+          }
+        }
+        writeOverrides(rowConfig, effective)
+        log.push(`config updated: ${Object.keys(effective).join(', ') || '(empty)'}`)
         restart()
-        return adminStatus(status, transport, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
+        return adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
       },
       resetConfig: async () => {
         clearOverrides(rowConfig)
         log.push('config overrides cleared')
         restart()
-        return adminStatus(status, transport, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
+        return adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
       },
       tools: () => ({
         mode: runner.mode,
@@ -200,12 +229,27 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
       }),
       logs: () => log.lines(),
       connectionRejection: request => hostConnectionRejection(ctx, request),
-      reconnect: async () => {
-        if (transport instanceof EndpointTransport) transport.reconnect()
-        else log.push('reconnect ignored: server mode has no outbound connection')
-        return adminStatus(status, transport, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
+      reconnect: async payload => {
+        const id = typeof payload?.id === 'string' ? payload.id.trim() : ''
+        if (endpointDevices.length > 0) {
+          const targets = id === '' ? endpointDevices : endpointDevices.filter(device => device.id === id)
+          if (targets.length === 0) {
+            log.push(`reconnect: no device matches id ${id}`)
+          } else {
+            for (const device of targets) device.transport.reconnect()
+          }
+        } else if (serverTransport) {
+          log.push('reconnect ignored: server mode has no outbound connection')
+        } else {
+          log.push('reconnect ignored: no Xiaozhi device is bound')
+        }
+        return adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
       },
-      test: async () => testConnection(resolved, transport, log),
+      test: async payload => {
+        const id = typeof payload?.id === 'string' ? payload.id.trim() : ''
+        const url = typeof payload?.url === 'string' ? payload.url.trim() : ''
+        return testConnection(resolved, endpointDevices, serverTransport, { id, url }, log)
+      },
       log: message => log.push(message),
     })
 
@@ -232,12 +276,14 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
     }
 
     // Every HTTP surface is mounted: it is now safe to open the MCP channel.
-    transport?.start()
+    for (const device of endpointDevices) device.transport.start()
+    serverTransport?.start()
 
     return {
       dispose() {
         try {
-          transport?.stop()
+          for (const device of endpointDevices) device.transport.stop()
+          serverTransport?.stop()
         } catch (err) {
           log.push(`transport stop failed: ${(err as Error)?.message ?? String(err)}`)
         }
@@ -276,6 +322,14 @@ interface Runtime {
   dispose(): void
 }
 
+/** One bound Xiaozhi device's live connection machinery. */
+interface EndpointDeviceRuntime {
+  id: string
+  name: string
+  status: TransportStatus
+  transport: EndpointTransport
+}
+
 /**
  * Replace the live runtime with a freshly booted one, **disposing first**.
  *
@@ -298,19 +352,43 @@ export function swapRuntime<T extends Runtime>(
   }
 }
 
-function transportSnapshot(
+/**
+ * The single `transport` view the settings page and the `dsh_status` tool see:
+ * the server snapshot verbatim, or the healthiest-aggregate of the devices
+ * (ready beats connecting beats error beats idle) with the count attached so a
+ * multi-device deployment reads honestly at a glance.
+ */
+function aggregateSnapshot(
+  devices: EndpointDeviceRuntime[],
+  server: ServerTransport | undefined,
   status: TransportStatus,
-  transport: EndpointTransport | ServerTransport | undefined,
   resolved: ResolvedConfig,
 ): TransportSnapshot {
-  if (transport) return transport.snapshot()
+  if (server) return server.snapshot()
+  if (devices.length > 0) {
+    const snaps = devices.map(device => device.transport.snapshot())
+    const rank: Record<string, number> = { ready: 0, connecting: 1, error: 2, idle: 3, disabled: 4 }
+    const best = [...snaps].sort((a, b) => (rank[a.state] ?? 9) - (rank[b.state] ?? 9))[0]
+    const connectedAt = snaps
+      .filter(snap => typeof snap.connectedAt === 'number')
+      .map(snap => snap.connectedAt as number)
+      .sort((a, b) => b - a)[0]
+    const errored = snaps.find(snap => snap.state === 'error')
+    return {
+      mode: 'endpoint',
+      state: best.state,
+      connected: snaps.some(snap => snap.connected),
+      endpointUrl: snaps.length === 1 ? snaps[0].endpointUrl : `${snaps.length} 台设备`,
+      deviceCount: snaps.length,
+      connectedAt,
+      lastError: errored?.lastError ?? best.lastError,
+    }
+  }
   return {
     mode: resolved.mode,
     state: status.state,
     connected: false,
     endpointUrl: resolved.mode === 'endpoint' ? maskEndpoint(resolved.endpointUrl) : undefined,
-    serverPath: resolved.mode === 'server' ? resolved.serverPath : undefined,
-    serverPort: resolved.mode === 'server' ? resolved.serverPort : undefined,
     lastError: status.lastError,
   }
 }
@@ -335,8 +413,9 @@ function hostConnectionRejection(ctx: { get(name: string): unknown }, request: u
 }
 
 async function adminStatus(
+  endpointDevices: EndpointDeviceRuntime[],
+  serverTransport: ServerTransport | undefined,
   status: TransportStatus,
-  transport: EndpointTransport | ServerTransport | undefined,
   resolved: ResolvedConfig,
   runner: ToolRunner,
   capabilities: CapabilityRuntime,
@@ -350,9 +429,16 @@ async function adminStatus(
     plugin: { name: 'dsh-xiaozhi', version: pluginVersion() },
     settingsFile: resolveSettingsFile(rowConfig),
     config: redactConfig(resolved),
-    transport: transport
-      ? { ...transport.snapshot(), logLines: log.lines().length }
-      : transportSnapshot(status, undefined, resolved),
+    transport: {
+      ...aggregateSnapshot(endpointDevices, serverTransport, status, resolved),
+      logLines: log.lines().length,
+    },
+    // Per-device live state for the settings page; absent in server mode where
+    // inbound clients are not "devices".
+    devices:
+      resolved.enabled && resolved.mode === 'endpoint'
+        ? endpointDevices.map(device => device.transport.snapshot())
+        : undefined,
     tools: {
       mode: runner.mode,
       count: tools.length,
@@ -382,11 +468,13 @@ function collectWarnings(resolved: ResolvedConfig, runner: ToolRunner): string[]
     return warnings
   }
   if (resolved.mode === 'endpoint') {
-    if (resolved.endpointUrl.trim() === '') {
-      warnings.push('未填写小智 MCP 接入点地址。请在小智 App 或后台复制「MCP 接入点」的 WebSocket 地址并粘贴。')
-    } else {
-      const problem = validateEndpointUrl(resolved.endpointUrl)
-      if (problem) warnings.push(problem)
+    const devices = effectiveEndpoints(resolved)
+    if (devices.length === 0) {
+      warnings.push('未绑定任何小智 MCP 设备。请在小智 App 或后台复制「MCP 接入点」的 WebSocket 地址，在设置页「添加设备」。')
+    }
+    for (const device of devices) {
+      const problem = validateEndpointUrl(device.url)
+      if (problem) warnings.push(`设备「${device.name || device.id}」：${problem}`)
     }
   } else {
     if (resolved.serverPort > 0 && !resolved.serverToken) {
@@ -437,17 +525,25 @@ export function validateEndpointUrl(url: string): string | null {
   return null
 }
 
-/** "测试连接": a real handshake, then an immediate clean close. */
+/**
+ * "测试连接": a real handshake, then an immediate clean close.
+ *
+ * Without a target the whole device list is probed in parallel and the results
+ * are summarised; with a device id or an explicit URL only that one is probed
+ * (the settings page tests unsaved rows by URL, saved rows by id).
+ */
 async function testConnection(
   resolved: ResolvedConfig,
-  transport: EndpointTransport | ServerTransport | undefined,
+  endpointDevices: EndpointDeviceRuntime[],
+  serverTransport: ServerTransport | undefined,
+  target: { id?: string; url?: string },
   log: RingLog,
 ): Promise<unknown> {
   if (!resolved.enabled) {
     return { ok: false, message: '插件已关闭（enabled=false），请先启用。' }
   }
   if (resolved.mode === 'server') {
-    const snapshot = transport?.snapshot()
+    const snapshot = serverTransport?.snapshot()
     return {
       ok: Boolean(snapshot?.listenUrls?.length),
       message: 'server 模式下由小智主动连接；请把下面的地址填入小智的 MCP 接入点/服务器配置。',
@@ -456,23 +552,41 @@ async function testConnection(
     }
   }
 
-  const problem = validateEndpointUrl(resolved.endpointUrl)
-  if (problem) return { ok: false, message: problem }
-
-  try {
-    const connection = await connectWebSocket(resolved.endpointUrl, {
-      headers: resolved.endpointHeaders,
-      handshakeTimeoutMs: 10_000,
-    })
-    connection.close(1000, 'connection test')
-    log.push('connection test succeeded')
-    return { ok: true, message: '握手成功：地址与 token 有效，小智平台已接受连接。' }
-  } catch (err) {
-    const message = (err as Error)?.message ?? String(err)
-    log.push(`connection test failed: ${message}`)
-    return {
-      ok: false,
-      message: `握手失败：${message}。常见原因：token 过期或不属于当前智能体、地址区域不对、网络需要代理。`,
+  const probeOne = async (url: string, headers: Record<string, string>, label: string): Promise<string> => {
+    const problem = validateEndpointUrl(url)
+    if (problem) return `${label}：${problem}`
+    try {
+      const connection = await connectWebSocket(url, { headers, handshakeTimeoutMs: 10_000 })
+      connection.close(1000, 'connection test')
+      return `${label}：握手成功，地址与 token 有效。`
+    } catch (err) {
+      const message = (err as Error)?.message ?? String(err)
+      log.push(`connection test failed (${label}): ${message}`)
+      return `${label}：握手失败：${message}。常见原因：token 过期或不属于当前智能体、地址区域不对、网络需要代理。`
     }
   }
+
+  if (target.id) {
+    const device = effectiveEndpoints(resolved).find(candidate => candidate.id === target.id)
+    if (!device) return { ok: false, message: '找不到该设备，请先保存配置后再测试。' }
+    const label = device.name || device.id
+    const message = await probeOne(device.url, { ...resolved.endpointHeaders, ...(device.headers ?? {}) }, label)
+    return { ok: message.includes('握手成功'), message }
+  }
+  if (target.url) {
+    const message = await probeOne(target.url, { ...resolved.endpointHeaders }, '未保存的地址')
+    return { ok: message.includes('握手成功'), message }
+  }
+
+  const devices = effectiveEndpoints(resolved)
+  if (devices.length === 0) {
+    return { ok: false, message: '未绑定任何小智 MCP 设备，请先在「接入配置」添加设备并保存。' }
+  }
+  const results = await Promise.all(
+    devices.map(device =>
+      probeOne(device.url, { ...resolved.endpointHeaders, ...(device.headers ?? {}) }, device.name || device.id),
+    ),
+  )
+  log.push(`connection test: ${results.filter(line => line.includes('握手成功')).length}/${results.length} succeeded`)
+  return { ok: results.every(line => line.includes('握手成功')), message: results.join('\n') }
 }

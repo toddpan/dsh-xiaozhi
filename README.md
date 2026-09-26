@@ -61,12 +61,15 @@ its **MCP access point** page open.
 
    Or use "install from a local directory" under Settings → Plugins in DSH Web.
 
-2. **Paste the access point**: DSH Web → Settings → **Xiaozhi** → Connection, put the WebSocket
-   address from the Xiaozhi console (like `wss://api.xiaozhi.me/mcp/?token=…`) into
-   "Xiaozhi MCP access point", then press **Save and reload**.
+2. **Add a device with the access point**: DSH Web → Settings → **Xiaozhi** → Connection, press
+   **Add device**, paste the WebSocket address from the Xiaozhi console (like
+   `wss://api.xiaozhi.me/mcp/?token=…`), then press **Save and reload**. Add more rows to
+   **bind several Xiaozhi devices/agents at once** — each connects and reports its state
+   independently.
 
-3. **Check the status tab**: the connection should read `connected` with a client count. Press
-   **Test connection** to perform a real handshake.
+3. **Check the status tab**: the connection should read `connected`. The tab **auto-refreshes every
+   3 seconds**, so after "Reconnect now" (or a single device's reconnect) the badge flips without a
+   manual refresh. Press **Test connection** to perform a real handshake.
 
    Then say to Xiaozhi: *"ask DSH for my session list"*.
 
@@ -81,11 +84,18 @@ its **MCP access point** page open.
 | --- | --- | --- |
 | Who connects | DSH dials out to the Xiaozhi access point | The Xiaozhi server connects to DSH |
 | Public reachability | not needed | needed (or a reverse proxy / same LAN) |
-| Main settings | `endpointUrl`, `endpointHeaders` | `serverPath`, `serverPort`, `serverToken` |
+| Main settings | `endpoints` (device list), `endpointHeaders` | `serverPath`, `serverPort`, `serverToken` |
 | Fits | the official Xiaozhi MCP access point | a self-hosted `xiaozhi-esp32-server` |
 
 Both can run at once: `mode` picks the primary channel, and `serverPort > 0` additionally listens on
 `0.0.0.0`.
+
+**Multi-device binding**: endpoint mode binds several Xiaozhi devices (several agents' MCP access
+points) at once. Each device owns one WebSocket connection with its own backoff and heartbeat; the
+settings page shows per-device state and offers per-device **Reconnect** and **Test**, and removing
+a device touches only that device. The list is stored under `endpoints` (§8); a legacy single-URL
+config (`endpointUrl`) still works — the page shows it as one device and migrates it to the list on
+the first save.
 
 **Reconnect** in endpoint mode uses exponential backoff (`reconnectMinMs` → `reconnectMaxMs`, ±20%
 jitter) plus a `heartbeatMs` ping. The Status tab and the log show every attempt.
@@ -161,12 +171,14 @@ Also:
 | `server` mode extra port | off (`serverPort=0`) | A port number listens on `0.0.0.0`, so `serverToken` becomes mandatory; the page warns when it is empty |
 
 **Secret masking**: reading the config masks `apiKey`, `serverToken`, the `token=` value inside the
-access point URL, and every `endpointHeaders` **value** (`••••••` / `***`) while keeping header
-**names**. Saving treats those sentinels as "unchanged" and drops them, so a sentinel can never
-overwrite a real secret.
+access point URL — including **every device URL** in `endpoints` — and every `endpointHeaders` /
+device-`headers` **value** (`••••••` / `***`) while keeping header **names**. Saving treats those
+sentinels as "unchanged" and restores the stored values, so a sentinel can never overwrite a real
+secret.
 
-**`endpointHeaders` can be added or overwritten from the page but not deleted** (the write is a
-merge). Edit `settings.json` by hand to remove a header.
+**Global `endpointHeaders` can be added or overwritten from the page but not deleted** (the write is
+a merge). Edit `settings.json` by hand to remove a global header; device-level `headers` are saved
+per row, so deleting the line in the device card and saving removes the key.
 
 ---
 
@@ -182,8 +194,9 @@ Precedence, lowest first:
 | --- | --- | --- |
 | `enabled` | `true` | while off, no tool can run |
 | `mode` | `endpoint` | `endpoint` / `server` |
-| `endpointUrl` | `''` | Xiaozhi MCP access point (`ws://`/`wss://`, must contain `/mcp/`) |
-| `endpointHeaders` | `{}` | extra request headers (merged on write) |
+| `endpoints` | `[]` | Xiaozhi MCP device list (`{id?, name?, url, headers?}`); when non-empty it wins over the legacy key. What "Add device" writes |
+| `endpointUrl` | `''` | (legacy single device) Xiaozhi MCP access point; ignored while `endpoints` is non-empty |
+| `endpointHeaders` | `{}` | extra request headers (fallback for every device; a device-level `headers` key overrides it) |
 | `serverPath` | `/mcp/xiaozhi` | server-mode path (must contain `/mcp/`) |
 | `serverPort` | `0` | `0` reuses the DSH web server; `>0` also listens on `0.0.0.0` |
 | `serverToken` | `''` | strongly recommended whenever `serverPort > 0` |
@@ -217,11 +230,14 @@ Precedence, lowest first:
 
 DSH Web → Settings → **Xiaozhi**, five tabs:
 
-* **Status** — connection badge, transport, masked access point, client count, reconnects, last
-  error, warnings, public addresses, tool/capability counts, per-group state; with **Test
-  connection**, **Reconnect now** and **Refresh**.
-* **Connection** — basics, tool-group switches, and a collapsed advanced form. **Save and reload**
-  writes the override file and restarts the runtime; **Restore defaults** clears every override.
+* **Status** — connection badge, transport, masked access point, **a state line per bound device**,
+  client count, reconnects, last error, warnings, public addresses, tool/capability counts,
+  per-group state; with **Test connection**, **Reconnect now** and **Refresh**. The tab
+  **auto-refreshes every 3 seconds**, so a reconnect updates the badge on its own.
+* **Connection** — basics, the **Xiaozhi MCP device list** (add / rename / remove, per-device
+  **Reconnect** and **Test**), tool-group switches, and a collapsed advanced form. **Save and
+  reload** writes the override file and restarts the runtime; **Restore defaults** clears every
+  override.
 * **Tools** — the tools actually exposed, their read/write nature and capability counts.
 * **Capabilities** — all 35 capabilities by area, with method and path.
 * **Logs** — the plugin ring log (300 lines) with an optional 5-second auto refresh.
@@ -239,13 +255,14 @@ bash scripts/build.sh                     # needs a DSH source checkout for tsc 
 node --test --test-timeout=30000 "test/*.test.mjs"
 ```
 
-**114 test cases** across:
+**127 test cases** across:
 
 | File | Covers |
 | --- | --- |
 | `test/protocol.test.mjs` | MCP messages, tool-name sanitiser fixed points, envelope parsing |
 | `test/ws.test.mjs` | RFC 6455 framing, mask direction, fragmentation, closing handshake |
 | `test/config.test.mjs` | three-layer merge, secret masking, `homeDir` not overridable |
+| `test/endpoints.test.mjs` | multi-device: `endpoints` normalisation and legacy-key compatibility, masked-device restore, per-device dialling and state |
 | `test/coverage.test.mjs` | **all 35 endpoints pinned verbatim**; both weavings cover everything; names are sanitiser fixed points |
 | `test/dispatcher.test.mjs` | in-process invocation: JSON, query strings, request bodies, streaming, 404, 504 timeout |
 | `test/mcp-session.test.mjs` | handshake → `tools/list` → `tools/call` over a real socket, with concurrency and protocol errors |
@@ -264,7 +281,7 @@ stays a clean three-way diff. See [NOTICE](./NOTICE).
 
 | Symptom | Cause and fix |
 | --- | --- |
-| Status stays `disconnected` | The access point is empty or malformed (must be `ws://`/`wss://`, contain `/mcp/`, and avoid the substrings `key`/`call`). Check the first error in the Logs tab |
+| Status stays `disconnected` | The device's access point is empty or malformed (must be `ws://`/`wss://`, contain `/mcp/`, and avoid the substrings `key`/`call`). Check the first error in the Logs tab; with several devices, each device row on the Status tab carries its own error |
 | Xiaozhi sees the tools but calls fail | Check `allowWriteTools`; a blocked write returns an explicit message |
 | Xiaozhi sees no tools at all | `enabled=false`, or every tool group is disabled |
 | Ids are hard to say aloud | Grouped tools shorten ids (like `sess-123`); you can also address things by name |

@@ -172,7 +172,8 @@ test('toDraft / toPatch round-trip the live config', { skip }, () => {
     enabled: true,
     mode: 'endpoint',
     endpointUrl: 'wss://api.xiaozhi.me/mcp/?token=***',
-    endpointHeaders: { Authorization: '••••••' },
+    endpoints: [{ id: 'ep-a1b2c3d4', name: '客厅', url: 'wss://api.xiaozhi.me/mcp/?token=***', headers: { Authorization: '••••••' } }],
+    endpointHeaders: {},
     toolMode: 'grouped',
     allowWriteTools: false,
     promptTimeoutMs: 120000,
@@ -182,16 +183,103 @@ test('toDraft / toPatch round-trip the live config', { skip }, () => {
   }
   const draft = toDraft(config)
   assert.equal(draft.promptTimeoutMs, 120000)
-  assert.equal(draft.endpointHeaders, '{"Authorization":"••••••"}')
+  assert.equal(draft.endpointHeaders, '{}')
   assert.deepEqual(draft.disabledGroups, ['docs'])
+  assert.deepEqual(
+    draft.endpoints,
+    [{ id: 'ep-a1b2c3d4', name: '客厅', url: 'wss://api.xiaozhi.me/mcp/?token=***', headers: '{"Authorization":"••••••"}' }],
+  )
 
   const t = key => key
   const patch = toPatch(draft, config, t)
   assert.equal(patch.promptTimeoutMs, 120000)
   assert.equal(typeof patch.maxVoiceChars, 'number')
-  assert.deepEqual(patch.endpointHeaders, { Authorization: '••••••' })
+  assert.deepEqual(patch.endpointHeaders, {})
   assert.deepEqual(patch.disabledGroups, ['docs'])
-  assert.equal(patch.endpointUrl, 'wss://api.xiaozhi.me/mcp/?token=***')
+  assert.deepEqual(patch.endpoints, [
+    { id: 'ep-a1b2c3d4', name: '客厅', url: 'wss://api.xiaozhi.me/mcp/?token=***', headers: { Authorization: '••••••' } },
+  ])
+  // The device list is authoritative once saved: the legacy key is cleared so
+  // removing the last device cannot silently resurrect it.
+  assert.equal(patch.endpointUrl, '')
+})
+
+test('toDraft synthesises a device row from the legacy single-URL config', { skip }, () => {
+  const { toDraft, isDirty } = client.__test
+  const config = { mode: 'endpoint', endpointUrl: 'wss://api.xiaozhi.me/mcp/?token=***', endpointHeaders: { A: 'b' } }
+  const draft = toDraft(config)
+  assert.deepEqual(draft.endpoints, [{ id: '', name: '', url: 'wss://api.xiaozhi.me/mcp/?token=***', headers: '{"A":"b"}' }])
+  assert.equal(isDirty(draft, config), false, 'a legacy config must not look dirty right after migration')
+})
+
+test('toDevicePatch validates headers and skips fully empty rows', { skip }, () => {
+  const { toDevicePatch, newDeviceRow } = client.__test
+  const t = key => key
+
+  const rows = [newDeviceRow(), { id: 'ep-1', name: '客厅', url: ' wss://x/mcp/?token=a ', headers: '{"Authorization":"Bearer t"}' }]
+  assert.deepEqual(toDevicePatch(rows, t), [{ id: 'ep-1', name: '客厅', url: 'wss://x/mcp/?token=a', headers: { Authorization: 'Bearer t' } }])
+
+  const badJson = [newDeviceRow(), { id: '', name: '坏', url: 'wss://x/mcp/', headers: '{not json' }]
+  assert.throws(() => toDevicePatch(badJson, t), /connect\.device\.invalidHeaders/)
+
+  const badShape = [{ id: '', name: '', url: '', headers: '["a"]' }]
+  assert.throws(() => toDevicePatch(badShape, t), /connect\.device\.invalidHeaders/)
+
+  // A named row without a URL is kept: the runtime reports it as unconfigured.
+  const namedOnly = [{ id: '', name: '待填', url: '', headers: '{}' }]
+  assert.deepEqual(toDevicePatch(namedOnly, t), [{ name: '待填' }])
+})
+
+test('isDirty tracks device edits without false positives', { skip }, () => {
+  const { toDraft, isDirty } = client.__test
+  const config = {
+    mode: 'endpoint',
+    endpoints: [{ id: 'ep-1', name: '客厅', url: 'wss://a/mcp/?token=***' }],
+  }
+  const draft = toDraft(config)
+  assert.equal(isDirty(draft, config), false, 'a fresh device list must not look dirty')
+
+  const renamed = Object.assign({}, draft, { endpoints: draft.endpoints.map(row => Object.assign({}, row, { name: '书房' })) })
+  assert.equal(isDirty(renamed, config), true)
+
+  const added = Object.assign({}, draft, { endpoints: draft.endpoints.concat([{ id: '', name: '', url: '', headers: '{}' }]) })
+  assert.equal(isDirty(added, config), true)
+
+  const removed = Object.assign({}, draft, { endpoints: [] })
+  assert.equal(isDirty(removed, config), true)
+})
+
+test('the connect tab renders the device list and the status tab renders per-device state', { skip }, () => {
+  const { ConnectTab, StatusTab, zh } = client.__test
+  const t = key => zh[key] ?? key
+  const status = {
+    config: { enabled: true, mode: 'endpoint', endpoints: [{ id: 'ep-1', name: '客厅', url: 'wss://a/mcp/?token=***' }] },
+    devices: [{ id: 'ep-1', name: '客厅', endpointUrl: 'wss://a/mcp/?token=***', state: 'ready', connected: true }],
+    transport: { mode: 'endpoint', state: 'ready', connected: true },
+    tools: { count: 0, names: [] },
+    groups: [],
+  }
+  const draft = {
+    mode: 'endpoint',
+    endpoints: [{ id: 'ep-1', name: '客厅', url: 'wss://a/mcp/?token=***', headers: '{}' }],
+    disabledGroups: [],
+  }
+  const connectHtml = renderToStaticMarkup(
+    React.createElement(ConnectTab, {
+      t, status, draft, dirty: false, busy: false, onChange() {}, onSave() {}, onReset() {},
+      onDeviceReconnect() {}, onDeviceTest() {}, testResult: null,
+    }),
+  )
+  assert.match(connectHtml, /小智 MCP 设备/)
+  assert.match(connectHtml, /添加设备/)
+  assert.match(connectHtml, /客厅/)
+  assert.match(connectHtml, /已连接/, 'a ready device must show its live badge')
+
+  const statusHtml = renderToStaticMarkup(
+    React.createElement(StatusTab, { t, status, capabilities: { total: 35 } }),
+  )
+  assert.match(statusHtml, /1 台设备，1 台已连接/)
+  assert.match(statusHtml, /状态每 3 秒自动刷新/)
 })
 
 test('toPatch rejects a malformed header map and a non-numeric number', { skip }, () => {

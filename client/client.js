@@ -75,6 +75,9 @@ const CONNECTION_TONES = {
       'status.reconnects': '重连次数',
       'status.lastError': '最近错误',
       'status.lastConnected': '最近连接时间',
+      'status.devices': '已绑定设备',
+      'status.devicesSummary': '{total} 台设备，{connected} 台已连接',
+      'status.autoRefresh': '状态每 3 秒自动刷新',
       'status.tools': '暴露工具数',
       'status.covered': '覆盖能力',
       'status.warnings': '需要注意',
@@ -109,10 +112,25 @@ const CONNECTION_TONES = {
       'connect.mode.hint': 'endpoint：DSH 主动连接小智的 MCP 接入点（推荐）。server：DSH 自己提供 MCP 服务端，供自建小智服务连接。',
       'connect.opt.mode.endpoint': 'endpoint（主动外连）',
       'connect.opt.mode.server': 'server（自建服务端）',
-      'connect.endpointUrl': '小智 MCP 接入点地址',
-      'connect.endpointUrl.hint': '小智 App/后台「MCP 接入点」里的 WebSocket 地址，形如 wss://api.xiaozhi.me/mcp/?token=…',
-      'connect.endpointHeaders': '接入点附加请求头',
-      'connect.endpointHeaders.hint': 'JSON 对象。已保存的值显示为 ••••••，留空表示不修改；删除某个请求头需手工编辑 settings.json。',
+      'connect.devices': '小智 MCP 设备',
+      'connect.devicesHint': '每个设备对应小智 App/后台的一个智能体「MCP 接入点」，可同时绑定多台，各自独立连接、独立显示状态。',
+      'connect.device.add': '添加设备',
+      'connect.device.remove': '删除',
+      'connect.device.removeConfirm': '确定删除这台设备？点「保存并重载」后生效。',
+      'connect.device.name': '设备名称（可选）',
+      'connect.device.namePlaceholder': '例如：客厅小智',
+      'connect.device.url': 'MCP 接入点地址',
+      'connect.device.urlPlaceholder': 'wss://api.xiaozhi.me/mcp/?token=…',
+      'connect.device.headers': '设备级附加请求头（JSON，可选）',
+      'connect.device.headersHint': 'JSON 对象；与「高级设置 → 接入点附加请求头」合并，同名键以设备级为准。已保存的值显示为 ••••••。',
+      'connect.device.invalidHeaders': '「{name}」的附加请求头必须是 JSON 对象，例如 {"Authorization":"Bearer xxx"}',
+      'connect.device.empty': '还没有绑定设备。点击「添加设备」，粘贴小智后台的 MCP 接入点地址并保存。',
+      'connect.device.savedOnly': '重连/测试针对已保存的配置；修改或新增的设备请先「保存并重载」。',
+      'connect.device.unnamed': '未命名设备',
+      'connect.device.reconnect': '重连',
+      'connect.device.test': '测试',
+      'connect.endpointHeaders': '接入点附加请求头（全局兜底）',
+      'connect.endpointHeaders.hint': 'JSON 对象，对所有设备生效；设备可在自己的「设备级附加请求头」里覆盖同名键。已保存的值显示为 ••••••，留空表示不修改。',
       'connect.serverPath': '服务端路径',
       'connect.serverPath.hint': 'server 模式下小智连接 DSH Web 服务器使用的路径。',
       'connect.serverPort': '独立监听端口',
@@ -212,6 +230,9 @@ const CONNECTION_TONES = {
       'status.reconnects': 'Reconnects',
       'status.lastError': 'Last error',
       'status.lastConnected': 'Last connected',
+      'status.devices': 'Bound devices',
+      'status.devicesSummary': '{total} device(s), {connected} connected',
+      'status.autoRefresh': 'Status auto-refreshes every 3s',
       'status.tools': 'Exposed tools',
       'status.covered': 'Capabilities covered',
       'status.warnings': 'Needs attention',
@@ -246,10 +267,25 @@ const CONNECTION_TONES = {
       'connect.mode.hint': 'endpoint: DSH dials out to the Xiaozhi MCP access point (recommended). server: DSH serves MCP itself for a self-hosted Xiaozhi server.',
       'connect.opt.mode.endpoint': 'endpoint (dial out)',
       'connect.opt.mode.server': 'server (self-hosted)',
-      'connect.endpointUrl': 'Xiaozhi MCP access point',
-      'connect.endpointUrl.hint': 'The WebSocket address from the "MCP access point" page of the Xiaozhi app/console, like wss://api.xiaozhi.me/mcp/?token=…',
-      'connect.endpointHeaders': 'Extra request headers',
-      'connect.endpointHeaders.hint': 'A JSON object. Saved values show as ••••••; leave blank to keep them. Removing a header requires editing settings.json by hand.',
+      'connect.devices': 'Xiaozhi MCP devices',
+      'connect.devicesHint': 'Each device is one agent "MCP access point" from the Xiaozhi app/console. Bind several at once; each connects and reports its state independently.',
+      'connect.device.add': 'Add device',
+      'connect.device.remove': 'Remove',
+      'connect.device.removeConfirm': 'Remove this device? Takes effect after "Save and reload".',
+      'connect.device.name': 'Device name (optional)',
+      'connect.device.namePlaceholder': 'e.g. Living-room Xiaozhi',
+      'connect.device.url': 'MCP access point URL',
+      'connect.device.urlPlaceholder': 'wss://api.xiaozhi.me/mcp/?token=…',
+      'connect.device.headers': 'Device headers (JSON, optional)',
+      'connect.device.headersHint': 'A JSON object merged with "Advanced → Extra request headers"; a device-level key wins. Saved values show as ••••••.',
+      'connect.device.invalidHeaders': 'The extra headers of "{name}" must be a JSON object, e.g. {"Authorization":"Bearer xxx"}',
+      'connect.device.empty': 'No device bound yet. Click "Add device", paste the MCP access point URL from the Xiaozhi console and save.',
+      'connect.device.savedOnly': 'Reconnect/test act on the saved config; save first after editing or adding devices.',
+      'connect.device.unnamed': 'Unnamed device',
+      'connect.device.reconnect': 'Reconnect',
+      'connect.device.test': 'Test',
+      'connect.endpointHeaders': 'Extra request headers (global fallback)',
+      'connect.endpointHeaders.hint': 'A JSON object applied to every device; a device may override a key in its own device headers. Saved values show as ••••••; leave blank to keep them.',
       'connect.serverPath': 'Server path',
       'connect.serverPath.hint': 'Path a Xiaozhi server connects to on the DSH web server in server mode.',
       'connect.serverPort': 'Dedicated listen port',
@@ -379,6 +415,7 @@ const CONNECTION_TONES = {
       notice: {
         border: '1px solid var(--dsw-alias-border-l1)', background: 'var(--dsw-alias-bg-layer-2)',
         borderRadius: '8px', padding: '8px 10px', fontSize: '12px', color: 'var(--dsw-alias-label-secondary)',
+        whiteSpace: 'pre-wrap',
       },
       noticeBad: { color: 'var(--dsw-alias-state-error-primary)' },
       list: { margin: 0, paddingLeft: '18px', fontSize: '12px', lineHeight: 1.7, color: 'var(--dsw-alias-state-warn-primary)' },
@@ -447,13 +484,11 @@ const CONNECTION_TONES = {
         key: 'mode', kind: 'enum', area: 'basic', label: 'connect.mode', hint: 'connect.mode.hint',
         options: ['endpoint', 'server'],
       },
+      // Devices (endpoint mode) are edited by the DevicesCard below, not by a
+      // FIELDS entry: a row is a composite (name + url + headers), not a scalar.
       {
-        key: 'endpointUrl', kind: 'text', area: 'basic', label: 'connect.endpointUrl',
-        hint: 'connect.endpointUrl.hint', when: c => c.mode === 'endpoint',
-      },
-      {
-        key: 'endpointHeaders', kind: 'json', area: 'basic', label: 'connect.endpointHeaders',
-        hint: 'connect.endpointHeaders.hint', when: c => c.mode === 'endpoint',
+        key: 'endpointHeaders', kind: 'json', area: 'advanced', label: 'connect.endpointHeaders',
+        hint: 'connect.endpointHeaders.hint',
       },
       {
         key: 'serverPath', kind: 'text', area: 'basic', label: 'connect.serverPath',
@@ -522,6 +557,61 @@ const CONNECTION_TONES = {
     const JSON_KEYS = FIELDS.filter(f => f.kind === 'json').map(f => f.key)
     const EDITABLE_KEYS = FIELDS.map(f => f.key).concat(['disabledGroups'])
 
+    /** A URL that still carries the server's token mask (never sent back as-is). */
+    const MASKED_URL = /[?&]token=\*\*\*/i
+
+    /** Device rows as the draft edits them; headers are serialised to a string. */
+    function deviceRowsFromConfig(config) {
+      const source = Array.isArray(config.endpoints) && config.endpoints.length
+        ? config.endpoints
+        : config.endpointUrl
+          ? [{ id: '', name: '', url: config.endpointUrl, headers: config.endpointHeaders || {} }]
+          : []
+      return source.map(device => ({
+        id: String((device && device.id) || ''),
+        name: String((device && device.name) || ''),
+        url: String((device && device.url) || ''),
+        headers: JSON.stringify((device && device.headers) || {}, null, 0),
+      }))
+    }
+
+    function newDeviceRow() {
+      return { id: '', name: '', url: '', headers: '{}' }
+    }
+
+    /** Build the `endpoints` PATCH value from draft rows, or throw a readable error. */
+    function toDevicePatch(rows, t) {
+      const devices = []
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index] || {}
+        const displayName = String(row.name || '').trim() || '#' + (index + 1)
+        let headers = {}
+        const rawHeaders = String(row.headers || '').trim()
+        if (rawHeaders !== '') {
+          try {
+            headers = JSON.parse(rawHeaders)
+          } catch {
+            throw new Error(t('connect.device.invalidHeaders').replace('{name}', displayName))
+          }
+          if (headers === null || typeof headers !== 'object' || Array.isArray(headers)) {
+            throw new Error(t('connect.device.invalidHeaders').replace('{name}', displayName))
+          }
+        }
+        const id = String(row.id || '').trim()
+        const name = String(row.name || '').trim()
+        const url = String(row.url || '').trim()
+        // A row that is empty in every dimension is a mis-click, not a device.
+        if (id === '' && name === '' && url === '' && Object.keys(headers).length === 0) continue
+        const device = {}
+        if (id !== '') device.id = id
+        if (name !== '') device.name = name
+        if (url !== '') device.url = url
+        if (Object.keys(headers).length > 0) device.headers = headers
+        devices.push(device)
+      }
+      return devices
+    }
+
     /** Draft values are strings for every field the user types into. */
     function toDraft(config) {
       const draft = {}
@@ -530,6 +620,7 @@ const CONNECTION_TONES = {
         draft[field.key] = field.kind === 'json' ? JSON.stringify(value || {}, null, 0) : value === undefined ? '' : value
       }
       draft.disabledGroups = Array.isArray(config.disabledGroups) ? config.disabledGroups.slice() : []
+      draft.endpoints = deviceRowsFromConfig(config)
       return draft
     }
 
@@ -562,6 +653,10 @@ const CONNECTION_TONES = {
       }
       const disabled = Array.isArray(draft.disabledGroups) ? draft.disabledGroups : []
       patch.disabledGroups = disabled
+      // The device list is authoritative once saved; clear the legacy key so a
+      // deleted last device does not silently resurrect it.
+      patch.endpoints = toDevicePatch(draft.endpoints || [], t)
+      patch.endpointUrl = ''
       return patch
     }
 
@@ -594,6 +689,7 @@ const CONNECTION_TONES = {
       }
       const before = Array.isArray(config.disabledGroups) ? config.disabledGroups.join(',') : ''
       if ((draft.disabledGroups || []).join(',') !== before) return true
+      if (JSON.stringify(draft.endpoints || []) !== JSON.stringify(deviceRowsFromConfig(config))) return true
       return false
     }
     //#endregion
@@ -701,6 +797,118 @@ const CONNECTION_TONES = {
         props.children !== undefined && props.children !== null ? props.children : props.text,
       )
     }
+
+    const TONE_STYLE = { ok: 'badgeOk', warn: 'badgeWarn', bad: 'badgeBad', idle: 'badgeIdle' }
+
+    /** A connection-state badge; unknown states render as faults, never green. */
+    function stateBadge(t, state) {
+      const tone = CONNECTION_TONES[state] || 'bad'
+      const key = 'state.' + state
+      const label = t(key) !== key ? t(key) : state
+      return h('span', { style: Object.assign({}, S.badge, S[TONE_STYLE[tone]]) }, label)
+    }
+    //#endregion
+
+    //#region devices
+    /** One editable device row: name + access-point URL + headers + live state. */
+    function DeviceRow(props) {
+      const { row, index, status, t, busy, onChange, onRemove, onReconnect, onTest } = props
+      const live = ((status && status.devices) || []).find(device => device.id === row.id)
+      const saved = (((status && status.config) || {}).endpoints || []).find(device => device.id === row.id)
+      // A saved row whose URL is untouched tests by id (the stored token); an
+      // edited or new row tests by URL, which a masked token cannot do.
+      const testById = row.id !== '' && saved !== undefined && saved.url === row.url
+      const urlTestable = row.url.trim() !== '' && !MASKED_URL.test(row.url)
+      const setValue = (key, value) => onChange(index, key, value)
+      return h(
+        Card,
+        null,
+        h(
+          'div',
+          { style: Object.assign({}, S.actions, { justifyContent: 'space-between' }) },
+          h('input', {
+            type: 'text',
+            style: Object.assign({}, S.input, { maxWidth: '240px' }),
+            value: row.name,
+            placeholder: t('connect.device.namePlaceholder'),
+            onChange: event => setValue('name', event.target.value),
+            spellCheck: false,
+          }),
+          h('span', { style: S.hint }, row.id || null),
+          h('span', { style: { flex: '1' } }),
+          live ? stateBadge(t, live.state) : null,
+          h('button', {
+            type: 'button', style: busy || row.id === '' ? Object.assign({}, S.button, S.buttonDisabled) : S.button,
+            disabled: busy || row.id === '', onClick: () => onReconnect({ id: row.id }),
+          }, t('connect.device.reconnect')),
+          h('button', {
+            type: 'button', style: busy || (!testById && !urlTestable) ? Object.assign({}, S.button, S.buttonDisabled) : S.button,
+            disabled: busy || (!testById && !urlTestable),
+            onClick: () => onTest(testById ? { id: row.id } : { url: row.url.trim() }),
+          }, t('connect.device.test')),
+          h('button', { type: 'button', style: S.button, disabled: busy, onClick: onRemove }, t('connect.device.remove')),
+        ),
+        h(
+          'div',
+          { style: S.field },
+          h('span', { style: S.label }, t('connect.device.url')),
+          h('input', {
+            type: 'text', style: Object.assign({}, S.input, S.mono), value: row.url,
+            placeholder: t('connect.device.urlPlaceholder'),
+            onChange: event => setValue('url', event.target.value), spellCheck: false,
+          }),
+        ),
+        h(
+          'div',
+          { style: S.field },
+          h('span', { style: S.label }, t('connect.device.headers')),
+          h('textarea', {
+            style: Object.assign({}, S.textarea, { minHeight: '38px' }), value: row.headers,
+            onChange: event => setValue('headers', event.target.value), spellCheck: false,
+          }),
+          h('p', { style: S.hint }, t('connect.device.headersHint')),
+        ),
+        live && live.lastError ? h('p', { style: Object.assign({}, S.hint, S.noticeBad) }, String(live.lastError)) : null,
+      )
+    }
+
+    /** The device list (endpoint mode): add, edit, remove, reconnect, test. */
+    function DevicesCard(props) {
+      const { t, status, draft, busy, dirty, onChange, onReconnect, onTest } = props
+      const rows = draft.endpoints || []
+      const updateRow = (index, key, value) => {
+        const next = rows.map((row, at) => (at === index ? Object.assign({}, row, { [key]: value }) : row))
+        onChange('endpoints', next)
+      }
+      const removeRow = index => {
+        const row = rows[index]
+        if (row && row.id && typeof window !== 'undefined' && !window.confirm(t('connect.device.removeConfirm'))) return
+        onChange('endpoints', rows.filter((_row, at) => at !== index))
+      }
+      const addRow = () => onChange('endpoints', rows.concat([newDeviceRow()]))
+      return h(
+        Card,
+        { title: t('connect.devices') },
+        h('p', { style: S.hint }, t('connect.devicesHint')),
+        dirty ? h('p', { style: S.hint }, t('connect.device.savedOnly')) : null,
+        rows.length === 0 ? h('p', { style: S.hint }, t('connect.device.empty')) : null,
+        rows.map((row, index) =>
+          h(DeviceRow, {
+            key: row.id || 'row-' + index,
+            row, index, status, t, busy,
+            onChange: updateRow,
+            onRemove: () => removeRow(index),
+            onReconnect,
+            onTest,
+          }),
+        ),
+        h(
+          'div',
+          { style: S.actions },
+          h('button', { type: 'button', style: busy ? Object.assign({}, S.button, S.buttonDisabled) : S.button, disabled: busy, onClick: addRow }, t('connect.device.add')),
+        ),
+      )
+    }
     //#endregion
 
     //#region sections
@@ -712,24 +920,19 @@ const CONNECTION_TONES = {
       // TypeError that blanked the whole tab.
       const config = status.config || {}
       const mode = transport.mode || config.mode || t('unknown')
-      const TONE_STYLE = { ok: 'badgeOk', warn: 'badgeWarn', bad: 'badgeBad', idle: 'badgeIdle' }
       let badgeTone = 'badgeIdle'
       let badgeText = t('unknown')
       if (config.enabled === false) {
         badgeTone = 'badgeBad'
         badgeText = t('connect.enabled') + '=' + t('no')
       } else if (transport.state) {
-        // An unknown state is treated as a fault, not as health: a state the
-        // page has never heard of must never look green.
-        const tone = CONNECTION_TONES[transport.state] || 'bad'
-        badgeTone = TONE_STYLE[tone] || 'badgeBad'
-        badgeText = t('state.' + transport.state) !== 'state.' + transport.state
-          ? t('state.' + transport.state)
-          : transport.state
+        badgeText = null // filled by stateBadge below
       }
       const tools = status.tools || { count: 0, names: [] }
       const caps = props.capabilities || { total: 0 }
       const exposed = tools.names && tools.names.length ? tools.names.length : tools.count
+      const devices = Array.isArray(status.devices) ? status.devices : []
+      const connectedDevices = devices.filter(device => device.connected).length
       return h(
         'div',
         { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
@@ -740,12 +943,16 @@ const CONNECTION_TONES = {
             'div',
             { style: S.row },
             h('span', { style: S.rowLabel }, t('status.state')),
-            h('span', null, h('span', { style: Object.assign({}, S.badge, S[badgeTone]) }, badgeText)),
+            h('span', null, h('span', { style: Object.assign({}, S.badge, S[badgeTone]) },
+              badgeText === null ? stateBadge(t, transport.state) : badgeText)),
           ),
           transport.state ? h(Row, { label: t('status.stateRaw'), mono: true }, String(transport.state)) : null,
           h(Row, { label: t('status.mode'), mono: true }, String(mode)),
           h(Row, { label: t('status.endpoint'), mono: true }, String(transport.endpoint || transport.url || config.endpointUrl || t('none'))),
-          transport.clients !== undefined ? h(Row, { label: t('status.clients') }, String(transport.clients)) : null,
+          devices.length > 1 ? h(Row, { label: t('status.devices') }, String(devices.length)) : null,
+          transport.clients !== undefined || transport.connectedClients !== undefined
+            ? h(Row, { label: t('status.clients') }, String(transport.clients !== undefined ? transport.clients : transport.connectedClients))
+            : null,
           transport.reconnectAttempts !== undefined
             ? h(Row, { label: t('status.reconnects') }, String(transport.reconnectAttempts))
             : null,
@@ -753,6 +960,32 @@ const CONNECTION_TONES = {
             ? h(Row, { label: t('status.lastConnected') }, new Date(transport.lastConnectedAt).toLocaleString())
             : null,
           transport.lastError ? h(Row, { label: t('status.lastError') }, String(transport.lastError)) : null,
+          devices.length > 0
+            ? h(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' } },
+                h(
+                  'div',
+                  { style: S.row },
+                  h('span', { style: S.rowLabel }, t('status.devices')),
+                  h('span', { style: S.rowValue }, t('status.devicesSummary').replace('{total}', String(devices.length)).replace('{connected}', String(connectedDevices))),
+                ),
+                devices.map(device =>
+                  h(
+                    'div',
+                    { key: device.id || device.endpointUrl, style: S.row },
+                    h('span', { style: S.rowLabel }, device.name || t('connect.device.unnamed')),
+                    h(
+                      'span',
+                      { style: Object.assign({}, S.rowValue, { display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }) },
+                      stateBadge(t, device.state),
+                      h('span', { style: S.mono }, String(device.endpointUrl || t('none'))),
+                      device.lastError ? h('span', { style: Object.assign({}, S.hint, S.noticeBad) }, String(device.lastError)) : null,
+                    ),
+                  ),
+                ),
+              )
+            : null,
           h(
             'div',
             { style: S.actions },
@@ -767,6 +1000,7 @@ const CONNECTION_TONES = {
               props.busy ? t('status.testing') : t('status.test'),
             ),
             h('button', { type: 'button', style: S.button, onClick: props.onRefresh }, t('refresh')),
+            h('span', { style: S.hint }, t('status.autoRefresh')),
           ),
           props.testResult ? h(Notice, { bad: props.testResult.ok === false, text: props.testResult.message }) : null,
         ),
@@ -834,6 +1068,13 @@ const CONNECTION_TONES = {
         'div',
         { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
         h(Card, { title: t('connect.basics') }, basic.map(field => h(Field, { key: field.key, field, draft, t, onChange: props.onChange }))),
+        draft.mode !== 'server'
+          ? h(DevicesCard, {
+              t, status: props.status, draft, busy: props.busy, dirty: props.dirty,
+              onChange: props.onChange, onReconnect: props.onDeviceReconnect, onTest: props.onDeviceTest,
+            })
+          : null,
+        props.testResult && draft.mode !== 'server' ? h(Notice, { bad: props.testResult.ok === false, text: props.testResult.message }) : null,
         h(
           Card,
           { title: t('connect.groups') },
@@ -1028,6 +1269,23 @@ const CONNECTION_TONES = {
         load()
       }, [load])
 
+      // The transport state changes asynchronously (initial connect, manual
+      // reconnect, a config-save restart, a dropped socket), so the page polls
+      // instead of waiting for the user to hit refresh. Draft edits survive:
+      // `load` only seeds the draft on first load.
+      React.useEffect(
+        function () {
+          const timer = setInterval(function () {
+            if (typeof document !== 'undefined' && document.hidden) return
+            load()
+          }, 3000)
+          return function () {
+            clearInterval(timer)
+          }
+        },
+        [load],
+      )
+
       React.useEffect(
         function () {
           if (tab !== 'tools' || tools !== null) return undefined
@@ -1109,13 +1367,23 @@ const CONNECTION_TONES = {
 
       const onReconnect = () => {
         withBusy(() => request('/reconnect', { method: 'POST', body: {} }), t('status.reconnect'))
+        // The handshake settles asynchronously; the poll covers it eventually,
+        // these two follow-ups just make the badge flip within a couple seconds.
+        setTimeout(load, 900)
+        setTimeout(load, 2200)
       }
 
-      const onTest = () => {
+      const onDeviceReconnect = body => {
+        withBusy(() => request('/reconnect', { method: 'POST', body: body || {} }), t('status.reconnect'))
+        setTimeout(load, 900)
+        setTimeout(load, 2200)
+      }
+
+      const runTest = body => {
         setBusy(true)
         setNotice(null)
         setTestResult(null)
-        request('/test', { method: 'POST', body: {} })
+        request('/test', { method: 'POST', body: body || {} })
           .then(data => {
             setTestResult({
               ok: data && data.ok !== false,
@@ -1125,6 +1393,10 @@ const CONNECTION_TONES = {
           .catch(err => setTestResult({ ok: false, message: err && err.message ? err.message : String(err) }))
           .then(() => setBusy(false))
       }
+
+      const onTest = () => runTest({})
+
+      const onDeviceTest = body => runTest(body)
 
       if (error !== null && status === null) {
         return h(
@@ -1149,7 +1421,10 @@ const CONNECTION_TONES = {
       const dirty = isDirty(draft, status.config || {})
       let body
       if (tab === 'connect') {
-        body = h(ConnectTab, { t, status, draft, dirty, busy, onChange, onSave, onReset })
+        body = h(ConnectTab, {
+          t, status, draft, dirty, busy, onChange, onSave, onReset, testResult,
+          onDeviceReconnect, onDeviceTest,
+        })
       } else if (tab === 'tools') {
         body = h(ToolsTab, { t, tools, capabilities })
       } else if (tab === 'caps') {
@@ -1231,9 +1506,14 @@ const CONNECTION_TONES = {
         toDraft,
         toPatch,
         isDirty,
+        deviceRowsFromConfig,
+        newDeviceRow,
+        toDevicePatch,
         Section,
         StatusTab,
         ConnectTab,
+        DevicesCard,
+        DeviceRow,
         ToolsTab,
         CapabilitiesTab,
         LogsTab,

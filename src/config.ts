@@ -15,6 +15,7 @@
  * API never echoes it back — see `redactConfig`.
  */
 
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -23,11 +24,75 @@ import z from '@deepseek-ai/schemastery'
 export type XiaozhiMode = 'endpoint' | 'server'
 export type ToolMode = 'grouped' | 'flat'
 
+/**
+ * One bound Xiaozhi device (an MCP access point). `endpointUrl` above stays as
+ * the single-device legacy key; when `endpoints` is non-empty it is
+ * authoritative and the legacy key is ignored — see `effectiveEndpoints`.
+ */
+export interface EndpointDevice {
+  /** Stable identity the settings page keys status and masked URLs on. */
+  id: string
+  /** Optional display name, e.g. 客厅小智. */
+  name?: string
+  /** Xiaozhi MCP access point, ws:// or wss://, containing /mcp/ and a token. */
+  url: string
+  /** Per-device handshake headers, merged over the global `endpointHeaders`. */
+  headers?: Record<string, string>
+}
+
+/** Deterministic device id derived from the URL, so ids survive re-resolves. */
+export function hashEndpointId(url: string): string {
+  return `ep-${createHash('sha256').update(url).digest('hex').slice(0, 8)}`
+}
+
+/** Coerce arbitrary rows into devices, assigning stable ids and deduping them. */
+export function normalizeEndpoints(value: unknown): EndpointDevice[] {
+  if (!Array.isArray(value)) return []
+  const devices: EndpointDevice[] = []
+  const used = new Map<string, number>()
+  for (const raw of value) {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const row = raw as Record<string, unknown>
+    const url = String(row.url ?? '').trim()
+    const name = String(row.name ?? '').trim()
+    const headers =
+      row.headers && typeof row.headers === 'object' && !Array.isArray(row.headers)
+        ? Object.fromEntries(Object.entries(row.headers as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
+        : undefined
+    let base = String(row.id ?? '').trim()
+    if (base === '') base = url === '' ? 'ep-new' : hashEndpointId(url)
+    // Two rows may collide (same URL pasted twice): suffix deterministically.
+    const seen = used.get(base) ?? 0
+    used.set(base, seen + 1)
+    const id = seen === 0 ? base : `${base}-${seen + 1}`
+    const device: EndpointDevice = { id, url }
+    if (name !== '') device.name = name
+    if (headers && Object.keys(headers).length > 0) device.headers = headers
+    devices.push(device)
+  }
+  return devices
+}
+
+/**
+ * The devices the runtime should actually dial: the configured list, or — for
+ * configs written before multi-device support — the legacy single URL.
+ */
+export function effectiveEndpoints(
+  resolved: Pick<ResolvedConfig, 'endpoints' | 'endpointUrl' | 'endpointHeaders'>,
+): EndpointDevice[] {
+  if (resolved.endpoints.length > 0) return resolved.endpoints
+  const url = resolved.endpointUrl.trim()
+  if (url === '') return []
+  return normalizeEndpoints([{ url, headers: resolved.endpointHeaders }])
+}
+
 export const DEFAULTS = {
   enabled: true,
   mode: 'endpoint' as XiaozhiMode,
-  /** Xiaozhi MCP access point, e.g. wss://api.xiaozhi.me/mcp/?token=... */
+  /** Legacy single-device Xiaozhi MCP access point, e.g. wss://api.xiaozhi.me/mcp/?token=... */
   endpointUrl: '',
+  /** Multi-device access points; non-empty makes this list authoritative. */
+  endpoints: [] as EndpointDevice[],
   /** Extra handshake headers for endpoint mode (may hold a secret). */
   endpointHeaders: {} as Record<string, string>,
   /** Exact upgrade path served by `mode: server`. */
@@ -77,6 +142,7 @@ export interface Config {
   enabled?: boolean
   mode?: XiaozhiMode
   endpointUrl?: string
+  endpoints?: EndpointDevice[]
   endpointHeaders?: Record<string, string>
   serverPath?: string
   serverPort?: number
@@ -107,6 +173,7 @@ export interface ResolvedConfig {
   enabled: boolean
   mode: XiaozhiMode
   endpointUrl: string
+  endpoints: EndpointDevice[]
   endpointHeaders: Record<string, string>
   serverPath: string
   serverPort: number
@@ -138,8 +205,19 @@ export const Config: z<Config> = z.object({
     .union([z.const('endpoint'), z.const('server')])
     .default(DEFAULTS.mode)
     .description('endpoint=主动连出小智接入点；server=本机作为 MCP 服务端被小智连接'),
-  endpointUrl: z.string().default(DEFAULTS.endpointUrl).description('小智 MCP 接入点地址（ws:// 或 wss://，需含 /mcp/ 与 token）'),
-  endpointHeaders: z.dict(z.string()).default({}).description('endpoint 模式握手的额外请求头（可放鉴权信息，不会回显）'),
+  endpointUrl: z.string().default(DEFAULTS.endpointUrl).description('（旧单设备）小智 MCP 接入点地址；endpoints 非空时被忽略'),
+  endpoints: z
+    .array(
+      z.object({
+        id: z.string().default('').description('设备标识（留空时按地址自动生成）'),
+        name: z.string().default('').description('设备名称（可选，便于区分多台小智）'),
+        url: z.string().default('').description('该设备的 MCP 接入点地址（ws:// 或 wss://，需含 /mcp/ 与 token）'),
+        headers: z.dict(z.string()).default({}).description('该设备握手的额外请求头（覆盖全局同名键，不会回显）'),
+      }),
+    )
+    .default([])
+    .description('小智 MCP 设备列表（非空时优先生效，可同时绑定多台）'),
+  endpointHeaders: z.dict(z.string()).default({}).description('endpoint 模式握手的额外请求头（可放鉴权信息，不会回显；作为所有设备的兜底）'),
   serverPath: z.string().default(DEFAULTS.serverPath).description('server 模式监听的精确 WebSocket 路径'),
   serverPort: z.natural().default(DEFAULTS.serverPort).description('server 模式的独立监听端口（0 表示仅挂在 DSH Web 服务器上）'),
   serverToken: z.string().default(DEFAULTS.serverToken).description('server 模式的接入口令（非空时要求 ?token= 匹配）'),
@@ -197,6 +275,7 @@ export function resolveConfig(row: Config | undefined, overrides?: Config | unde
   const resolved = merged as unknown as ResolvedConfig
   resolved.mode = resolved.mode === 'server' ? 'server' : 'endpoint'
   resolved.toolMode = resolved.toolMode === 'flat' ? 'flat' : 'grouped'
+  resolved.endpoints = normalizeEndpoints(resolved.endpoints)
   resolved.disabledGroups = Array.isArray(resolved.disabledGroups)
     ? resolved.disabledGroups.map(String).filter(Boolean)
     : []
@@ -313,6 +392,20 @@ export function redactConfig(config: ResolvedConfig): Record<string, unknown> {
     // The access-point token is a bearer credential for the whole tool surface,
     // so it must never survive a round trip through the admin API.
     endpointUrl: maskEndpoint(config.endpointUrl),
+    // Devices are redacted individually; the list always reflects what the
+    // runtime dials (legacy single-URL configs synthesize their one device),
+    // so the settings page can edit devices without knowing about the legacy key.
+    // A device without headers keeps having no headers key (same shape as stored).
+    endpoints: effectiveEndpoints(config).map(device => {
+      const headerNames = Object.keys(device.headers ?? {})
+      return {
+        ...device,
+        url: maskEndpoint(device.url),
+        ...(headerNames.length > 0
+          ? { headers: Object.fromEntries(headerNames.map(name => [name, SECRET_MASK])) }
+          : {}),
+      }
+    }),
     apiKey: apiKey ? SECRET_MASK : '',
     serverToken: serverToken ? SECRET_MASK : '',
     endpointHeaders: Object.fromEntries(headerNames.map(name => [name, SECRET_MASK])),
@@ -322,4 +415,66 @@ export function redactConfig(config: ResolvedConfig): Record<string, unknown> {
       endpointHeaderNames: headerNames,
     },
   }
+}
+
+/**
+ * Resolve masked sentinels inside a `patch.endpoints` array against the stored
+ * configuration, the same job the admin router does for the legacy secret keys.
+ *
+ * A row's URL is matched back to its stored twin by `id`, then by the masked
+ * URL itself (configs written before ids existed). Masked header values are
+ * restored the same way; unknown ones are dropped, which `writeOverrides`'
+ * per-key merge turns into "keep the stored value". Rows whose masked URL
+ * matches nothing stored cannot be restored and are dropped — writing the
+ * literal mask into the config would create a device that can never connect.
+ */
+export function mergeMaskedEndpoints(
+  rowConfig: Pick<Config, 'homeDir'> | undefined,
+  patch: Config,
+): { endpoints?: EndpointDevice[]; dropped: number } {
+  if (!Array.isArray(patch.endpoints)) return { dropped: 0 }
+  const storedResolved = resolveConfig(rowConfig, readOverrides(rowConfig))
+  const storedList = effectiveEndpoints(storedResolved)
+  const findStored = (row: Record<string, unknown>): EndpointDevice | undefined => {
+    const id = String(row.id ?? '').trim()
+    if (id !== '') {
+      const byId = storedList.find(device => device.id === id)
+      if (byId) return byId
+    }
+    const url = String(row.url ?? '')
+    if (isMaskedEndpoint(url)) return storedList.find(device => maskEndpoint(device.url) === url)
+    return undefined
+  }
+
+  const resolved: EndpointDevice[] = []
+  let dropped = 0
+  for (const raw of patch.endpoints) {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const row = { ...(raw as unknown as Record<string, unknown>) }
+    const match = findStored(row)
+
+    // A masked URL must map back to a stored device, or the row is unrestorable.
+    if (isMaskedEndpoint(String(row.url ?? ''))) {
+      if (!match) {
+        dropped += 1
+        continue
+      }
+      row.url = match.url
+    }
+    const headers = row.headers
+    if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+      const restored: Record<string, unknown> = {}
+      for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+        if (value === SECRET_MASK) {
+          const stored = match?.headers?.[name]
+          if (stored !== undefined) restored[name] = stored
+        } else {
+          restored[name] = value
+        }
+      }
+      row.headers = restored
+    }
+    resolved.push(row as unknown as EndpointDevice)
+  }
+  return { endpoints: normalizeEndpoints(resolved), dropped }
 }

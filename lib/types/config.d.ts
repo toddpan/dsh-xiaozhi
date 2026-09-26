@@ -17,11 +17,37 @@
 import z from '@deepseek-ai/schemastery';
 export type XiaozhiMode = 'endpoint' | 'server';
 export type ToolMode = 'grouped' | 'flat';
+/**
+ * One bound Xiaozhi device (an MCP access point). `endpointUrl` above stays as
+ * the single-device legacy key; when `endpoints` is non-empty it is
+ * authoritative and the legacy key is ignored — see `effectiveEndpoints`.
+ */
+export interface EndpointDevice {
+    /** Stable identity the settings page keys status and masked URLs on. */
+    id: string;
+    /** Optional display name, e.g. 客厅小智. */
+    name?: string;
+    /** Xiaozhi MCP access point, ws:// or wss://, containing /mcp/ and a token. */
+    url: string;
+    /** Per-device handshake headers, merged over the global `endpointHeaders`. */
+    headers?: Record<string, string>;
+}
+/** Deterministic device id derived from the URL, so ids survive re-resolves. */
+export declare function hashEndpointId(url: string): string;
+/** Coerce arbitrary rows into devices, assigning stable ids and deduping them. */
+export declare function normalizeEndpoints(value: unknown): EndpointDevice[];
+/**
+ * The devices the runtime should actually dial: the configured list, or — for
+ * configs written before multi-device support — the legacy single URL.
+ */
+export declare function effectiveEndpoints(resolved: Pick<ResolvedConfig, 'endpoints' | 'endpointUrl' | 'endpointHeaders'>): EndpointDevice[];
 export declare const DEFAULTS: {
     readonly enabled: true;
     readonly mode: XiaozhiMode;
-    /** Xiaozhi MCP access point, e.g. wss://api.xiaozhi.me/mcp/?token=... */
+    /** Legacy single-device Xiaozhi MCP access point, e.g. wss://api.xiaozhi.me/mcp/?token=... */
     readonly endpointUrl: "";
+    /** Multi-device access points; non-empty makes this list authoritative. */
+    readonly endpoints: EndpointDevice[];
     /** Extra handshake headers for endpoint mode (may hold a secret). */
     readonly endpointHeaders: Record<string, string>;
     /** Exact upgrade path served by `mode: server`. */
@@ -70,6 +96,7 @@ export interface Config {
     enabled?: boolean;
     mode?: XiaozhiMode;
     endpointUrl?: string;
+    endpoints?: EndpointDevice[];
     endpointHeaders?: Record<string, string>;
     serverPath?: string;
     serverPort?: number;
@@ -99,6 +126,7 @@ export interface ResolvedConfig {
     enabled: boolean;
     mode: XiaozhiMode;
     endpointUrl: string;
+    endpoints: EndpointDevice[];
     endpointHeaders: Record<string, string>;
     serverPath: string;
     serverPort: number;
@@ -154,3 +182,18 @@ export declare function maskEndpoint(url: string): string;
 /** True when a URL still carries the mask, i.e. the user did not retype it. */
 export declare function isMaskedEndpoint(url: unknown): boolean;
 export declare function redactConfig(config: ResolvedConfig): Record<string, unknown>;
+/**
+ * Resolve masked sentinels inside a `patch.endpoints` array against the stored
+ * configuration, the same job the admin router does for the legacy secret keys.
+ *
+ * A row's URL is matched back to its stored twin by `id`, then by the masked
+ * URL itself (configs written before ids existed). Masked header values are
+ * restored the same way; unknown ones are dropped, which `writeOverrides`'
+ * per-key merge turns into "keep the stored value". Rows whose masked URL
+ * matches nothing stored cannot be restored and are dropped — writing the
+ * literal mask into the config would create a device that can never connect.
+ */
+export declare function mergeMaskedEndpoints(rowConfig: Pick<Config, 'homeDir'> | undefined, patch: Config): {
+    endpoints?: EndpointDevice[];
+    dropped: number;
+};

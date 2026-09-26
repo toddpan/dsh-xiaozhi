@@ -25,6 +25,11 @@ export interface TransportSnapshot {
   endpointUrl?: string
   serverPath?: string
   serverPort?: number
+  /** Multi-device identity (endpoint mode only). */
+  id?: string
+  name?: string
+  /** Number of configured devices when more than one is bound. */
+  deviceCount?: number
   /** URLs a Xiaozhi deployment can dial in `server` mode. */
   listenUrls?: string[]
   connectedClients?: number
@@ -57,6 +62,15 @@ export class TransportStatus {
 export interface EndpointTransportOptions {
   ctx: Context
   config: () => ResolvedConfig
+  /**
+   * Per-device connection target (multi-device support). Absent means the
+   * legacy single-device behaviour: dial `config().endpointUrl`.
+   */
+  url?: () => string
+  /** Per-device handshake headers; defaults to `config().endpointHeaders`. */
+  headers?: () => Record<string, string>
+  /** Device identity surfaced in the snapshot's status list. */
+  describe?: { id?: string; name?: string }
   status: TransportStatus
   createSession: (connection: WsConnection) => McpSession
   log: (message: string) => void
@@ -67,6 +81,7 @@ export interface EndpointTransportOptions {
 /**
  * Outbound (MCP access point) transport with exponential backoff.
  * `start()` is synchronous; reconnection runs on timers owned by the transport.
+ * One instance dials one access point; multi-device configs own one each.
  */
 export class EndpointTransport {
   private ws?: WsConnection
@@ -78,6 +93,14 @@ export class EndpointTransport {
   private handshakeTimer?: ReturnType<typeof setTimeout>
 
   constructor(private readonly options: EndpointTransportOptions) {}
+
+  private targetUrl(): string {
+    return this.options.url ? this.options.url() : this.options.config().endpointUrl
+  }
+
+  private targetHeaders(): Record<string, string> {
+    return this.options.headers ? this.options.headers() : this.options.config().endpointHeaders
+  }
 
   start(): void {
     this.stopped = false
@@ -103,12 +126,13 @@ export class EndpointTransport {
   }
 
   snapshot(): TransportSnapshot {
-    const config = this.options.config()
     return {
       mode: 'endpoint',
       state: this.options.status.state,
       connected: this.options.status.connected,
-      endpointUrl: maskEndpoint(config.endpointUrl),
+      endpointUrl: maskEndpoint(this.targetUrl()),
+      id: this.options.describe?.id,
+      name: this.options.describe?.name,
       connectedAt: this.options.status.connectedAt,
       lastError: this.options.status.lastError,
     }
@@ -152,8 +176,7 @@ export class EndpointTransport {
 
   private async connectOnce(): Promise<void> {
     if (this.stopped) return
-    const config = this.options.config()
-    const url = config.endpointUrl.trim()
+    const url = this.targetUrl().trim()
     if (url === '') {
       this.options.status.setState('idle')
       this.options.status.lastError = '未配置小智 MCP 接入点地址'
@@ -164,7 +187,7 @@ export class EndpointTransport {
     const connect = this.options.connect ?? connectWebSocket
     try {
       const ws = await connect(url, {
-        headers: config.endpointHeaders,
+        headers: this.targetHeaders(),
         handshakeTimeoutMs: 15_000,
       })
       if (this.stopped) {

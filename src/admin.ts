@@ -27,8 +27,10 @@ export interface AdminApiDeps {
   tools(): unknown
   capabilities(): unknown
   logs(): string[]
-  reconnect(): Promise<unknown>
-  test(): Promise<unknown>
+  /** `body.id` scopes the reconnect to one device; absent reconnects all. */
+  reconnect(body?: { id?: string }): Promise<unknown>
+  /** `body.id`/`body.url` scope the handshake probe; absent probes every device. */
+  test(body?: { id?: string; url?: string }): Promise<unknown>
   log(message: string): void
   /**
    * Optional stronger fence: the Host connection service, when it exists, can
@@ -169,15 +171,19 @@ export function createAdminRouter(deps: AdminApiDeps): HttpRouter {
 
   router.post(
     '/reconnect',
-    guard(true, async (_req, res) => {
-      sendJson(res, 200, { ok: true, data: await deps.reconnect() })
+    guard(true, async (_req, res, _params, _query, body) => {
+      const payload = body && typeof body === 'object' && !Array.isArray(body) ? (body as { id?: string }) : {}
+      sendJson(res, 200, { ok: true, data: await deps.reconnect(payload) })
     }),
   )
 
   router.post(
     '/test',
-    guard(true, async (_req, res) => {
-      sendJson(res, 200, { ok: true, data: await deps.test() })
+    guard(true, async (_req, res, _params, _query, body) => {
+      const payload = body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as { id?: string; url?: string })
+        : {}
+      sendJson(res, 200, { ok: true, data: await deps.test(payload) })
     }),
   )
 

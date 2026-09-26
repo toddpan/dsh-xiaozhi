@@ -21,6 +21,11 @@ export interface TransportSnapshot {
     endpointUrl?: string;
     serverPath?: string;
     serverPort?: number;
+    /** Multi-device identity (endpoint mode only). */
+    id?: string;
+    name?: string;
+    /** Number of configured devices when more than one is bound. */
+    deviceCount?: number;
     /** URLs a Xiaozhi deployment can dial in `server` mode. */
     listenUrls?: string[];
     connectedClients?: number;
@@ -45,6 +50,18 @@ export declare class TransportStatus {
 export interface EndpointTransportOptions {
     ctx: Context;
     config: () => ResolvedConfig;
+    /**
+     * Per-device connection target (multi-device support). Absent means the
+     * legacy single-device behaviour: dial `config().endpointUrl`.
+     */
+    url?: () => string;
+    /** Per-device handshake headers; defaults to `config().endpointHeaders`. */
+    headers?: () => Record<string, string>;
+    /** Device identity surfaced in the snapshot's status list. */
+    describe?: {
+        id?: string;
+        name?: string;
+    };
     status: TransportStatus;
     createSession: (connection: WsConnection) => McpSession;
     log: (message: string) => void;
@@ -54,6 +71,7 @@ export interface EndpointTransportOptions {
 /**
  * Outbound (MCP access point) transport with exponential backoff.
  * `start()` is synchronous; reconnection runs on timers owned by the transport.
+ * One instance dials one access point; multi-device configs own one each.
  */
 export declare class EndpointTransport {
     private readonly options;
@@ -65,6 +83,8 @@ export declare class EndpointTransport {
     private heartbeatTimer?;
     private handshakeTimer?;
     constructor(options: EndpointTransportOptions);
+    private targetUrl;
+    private targetHeaders;
     start(): void;
     stop(code?: number, reason?: string): void;
     snapshot(): TransportSnapshot;

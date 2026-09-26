@@ -1,7 +1,7 @@
 {
   "name": "dsh-xiaozhi",
-  "version": "0.1.0",
-  "description": "Expose DeepSeek Harness (DSH) Web capabilities to the Xiaozhi voice assistant over MCP: a self-contained DSH bundle that registers DSH as an MCP tool provider on a Xiaozhi MCP endpoint (or as a Xiaozhi-connectable MCP server), plus a DSH Web settings page. · 把小智（Xiaozhi）语音助手接入 DSH：通过 MCP 协议把 DSH Web 的工作区/会话/模型/设置/文件等能力封装成工具供小智语音调用，自带 DSH Web 设置页面。",
+  "version": "0.2.0",
+  "description": "Expose DeepSeek Harness (DSH) Web capabilities to the Xiaozhi voice assistant over MCP: multi-device capable self-contained DSH bundle that registers DSH as an MCP tool provider on a Xiaozhi MCP endpoint (or as a Xiaozhi-connectable MCP server), plus a DSH Web settings page. · 把小智（Xiaozhi）语音助手接入 DSH：通过 MCP 协议把 DSH Web 的工作区/会话/模型/设置/文件等能力封装成工具供小智语音调用，自带 DSH Web 设置页面。",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",

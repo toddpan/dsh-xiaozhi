@@ -42,7 +42,8 @@ dsh --profile "$DSH_PROFILE" --dump-config | grep -A2 xiaozhi
 
 1. 打开 DSH Web →「设置 → **小智接入**」。
 2. 「接入配置」页签：
-   * 粘贴小智的 **MCP 接入点地址**（`wss://api.xiaozhi.me/mcp/?token=…`）。
+   * 点「**添加设备**」，粘贴小智的 **MCP 接入点地址**（`wss://api.xiaozhi.me/mcp/?token=…`）；
+     可以添加多行，**同时绑定多台小智设备/智能体**（每台可单独「重连」「测试」）。
    * 需要的话设置 `serverToken`（仅 `server` 模式 + 独立端口时需要）。
    * 用「工具组开关」关掉暂时不用的域。
 3. 点「保存并重载」。
@@ -55,12 +56,12 @@ dsh --profile "$DSH_PROFILE" --dump-config | grep -A2 xiaozhi
 
 | # | 做什么 | 期望看到 |
 | --- | --- | --- |
-| 1 | 「状态」页签 | 连接状态徽标为 `connected`，并显示已连接客户端数 |
+| 1 | 「状态」页签 | 连接状态徽标为 `connected`；多台设备时每台一行，各自显示状态 |
 | 2 | 点「测试连接」 | 返回成功，且日志里出现一次完整的 initialize 握手 |
 | 3 | 小智 App 的 MCP 工具列表 | 出现 16 个 `dsh_*` 工具（grouped 默认） |
 | 4 | 对小智说「让 DSH 汇报运行状态」 | 语音播报 DSH 状态摘要（端口、会话数等） |
 | 5 | 设置页把 `allowWriteTools` 关掉并保存 | 「工具清单」里写入类动作被拒绝并返回中文说明，只读仍可用 |
-| 6 | 拔网线/断网 10 秒再恢复（endpoint 模式） | 「重连次数」增加，状态回到 `connected` |
+| 6 | 拔网线/断网 10 秒再恢复（endpoint 模式） | 「重连次数」增加，状态回到 `connected`（状态页 3 秒自动刷新） |
 | 7 | 设置页切到浅色/深色主题 | 页面配色跟随宿主，无硬编码色块 |
 
 命令行侧的自检（不依赖小智）：
@@ -68,7 +69,7 @@ dsh --profile "$DSH_PROFILE" --dump-config | grep -A2 xiaozhi
 ```bash
 cd dsh-xiaozhi
 bash scripts/build.sh
-node --test --test-timeout=30000 "test/*.test.mjs"     # 期望：114 个用例全部通过 / 0 fail
+node --test --test-timeout=30000 "test/*.test.mjs"     # 期望：127 个用例全部通过 / 0 fail
 ```
 
 ---

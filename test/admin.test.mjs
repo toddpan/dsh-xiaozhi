@@ -258,6 +258,49 @@ test('PATCH /config drops masked sentinels instead of overwriting real secrets',
   assert.deepEqual(calls.patched, [{ endpointHeaders: { 'X-Keep': 'kept' }, serverName: 'renamed' }])
 })
 
+test('PATCH /config forwards device rows to the config layer untouched', async () => {
+  // Masked URLs inside `endpoints` are resolved by the config layer (against
+  // the stored overrides), which these mocked deps stand in for; the router
+  // must not drop or rewrite the rows on the way through.
+  const { deps, calls } = makeDeps()
+  const invoker = invokerFor(deps)
+  const endpoints = [
+    { id: 'ep-1', name: '客厅', url: 'wss://api.xiaozhi.me/mcp/?token=***' },
+    { id: 'ep-2', url: 'wss://other.host/mcp/?token=real' },
+  ]
+  const response = await call(invoker, {
+    method: 'PATCH',
+    path: '/config',
+    headers: csrf,
+    body: { endpoints, endpointUrl: '' },
+  })
+  assert.equal(response.status, 200)
+  assert.deepEqual(calls.patched, [{ endpoints, endpointUrl: '' }])
+})
+
+test('reconnect and test forward the scoping body to the host deps', async () => {
+  const seen = { reconnect: [], test: [] }
+  const { deps } = makeDeps({
+    reconnect: async body => {
+      seen.reconnect.push(body)
+      return { reconnected: true }
+    },
+    test: async body => {
+      seen.test.push(body)
+      return { ok: true, message: 'handshake completed' }
+    },
+  })
+  const invoker = invokerFor(deps)
+
+  await call(invoker, { method: 'POST', path: '/reconnect', headers: csrf, body: { id: 'ep-1' } })
+  await call(invoker, { method: 'POST', path: '/reconnect', headers: csrf, body: {} })
+  await call(invoker, { method: 'POST', path: '/test', headers: csrf, body: { url: 'wss://x/mcp/?token=t' } })
+  await call(invoker, { method: 'POST', path: '/test', headers: csrf, body: {} })
+
+  assert.deepEqual(seen.reconnect, [{ id: 'ep-1' }, {}])
+  assert.deepEqual(seen.test, [{ url: 'wss://x/mcp/?token=t' }, {}])
+})
+
 test('PATCH /config rejects a non-object body', async () => {
   const cases = [null, [], 'text', 42]
   for (const body of cases) {
@@ -356,13 +399,17 @@ test('the MCP transport is started only after the HTTP routes are mounted', () =
   // live socket and no owner - exactly the leak this plugin once had.
   const source = readFileSync(path.join(root, 'src/index.ts'), 'utf8')
   const mounted = source.indexOf('admin API mounted at')
-  const start = source.indexOf('transport?.start()')
+  const start = source.indexOf('serverTransport?.start()')
   assert.ok(mounted > 0, 'the route-mounting block must still exist')
   assert.ok(start > 0, 'the transport must still be started explicitly')
-  assert.ok(start > mounted, 'transport?.start() must come after the routes are mounted')
+  assert.ok(start > mounted, 'the transports must start after the routes are mounted')
+  assert.ok(
+    source.includes('for (const device of endpointDevices) device.transport.start()'),
+    'every bound device transport must start at that same place',
+  )
   assert.equal(
     start,
-    source.lastIndexOf('transport?.start()'),
-    'there must be exactly one place that starts the transport',
+    source.lastIndexOf('serverTransport?.start()'),
+    'there must be exactly one place that starts the transports',
   )
 })
