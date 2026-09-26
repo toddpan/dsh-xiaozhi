@@ -66,6 +66,15 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
 
   let runtime: Runtime | undefined
   let resolved = resolveConfig(rowConfig, readOverrides(rowConfig))
+  // Points at the *currently live* runtime's status provider. Deps that restart
+  // the runtime (save/reset) must answer from the new one — answering from their
+  // own boot-time locals would report the just-disposed runtime (idle, old names).
+  let liveStatus: (() => Promise<unknown>) | undefined
+  const requireLiveStatus = (): Promise<unknown> => {
+    // Assigned synchronously during boot, before any request can be dispatched.
+    if (!liveStatus) throw new Error('runtime status provider is not ready')
+    return liveStatus()
+  }
 
   const boot = (): Runtime => {
     const config = resolveConfig(rowConfig, readOverrides(rowConfig))
@@ -180,9 +189,14 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
       }
     }
 
+    // Published before the routes mount: every admin response after this point
+    // (including the ones following a save-triggered restart) reads the live
+    // runtime, not the closure that happened to handle the request.
+    liveStatus = () =>
+      adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
+
     const adminRouter = createAdminRouter({
-      status: async () =>
-        adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log),
+      status: () => requireLiveStatus(),
       patchConfig: async patch => {
         // Device rows arrive with masked URLs/headers from the settings page;
         // resolve them against the stored config before anything is written.
@@ -197,13 +211,13 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
         writeOverrides(rowConfig, effective)
         log.push(`config updated: ${Object.keys(effective).join(', ') || '(empty)'}`)
         restart()
-        return adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
+        return requireLiveStatus()
       },
       resetConfig: async () => {
         clearOverrides(rowConfig)
         log.push('config overrides cleared')
         restart()
-        return adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
+        return requireLiveStatus()
       },
       tools: () => ({
         mode: runner.mode,
@@ -243,7 +257,9 @@ export function apply(ctx: Context, rowConfig: XiaozhiConfig): void {
         } else {
           log.push('reconnect ignored: no Xiaozhi device is bound')
         }
-        return adminStatus(endpointDevices, serverTransport, status, resolved, runner, capabilities, apiBase, adminBase, rowConfig, log)
+        // The handshake settles asynchronously; the page's 3s poll (plus its
+        // own follow-up fetches) reports the final state.
+        return requireLiveStatus()
       },
       test: async payload => {
         const id = typeof payload?.id === 'string' ? payload.id.trim() : ''
