@@ -239,7 +239,7 @@ bash scripts/build.sh                     # needs a DSH source checkout for tsc 
 node --test --test-timeout=30000 "test/*.test.mjs"
 ```
 
-**107 test cases** across:
+**114 test cases** across:
 
 | File | Covers |
 | --- | --- |

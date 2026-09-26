@@ -71,6 +71,20 @@ export interface CapabilityRuntimeDeps {
 export declare class CapabilityRuntime {
     private readonly deps;
     constructor(deps: CapabilityRuntimeDeps);
+    private refCache?;
+    /**
+     * Voice-facing ids are lossy on purpose (`dsh_session_history` says
+     * `4ac05afc`, a title, or a fragment of either), so every id-bearing
+     * capability expands what it receives back to the full id before dispatch.
+     * Resolution is prefix/substring based against the live list; one match
+     * resolves, several match is a speakable ambiguity error, none is a
+     * speakable not-found. Fetch failures fail *open* (the raw id is passed
+     * through) so a list hiccup cannot break full-id callers.
+     */
+    private refIndex;
+    private resolveRef;
+    /** Expand ids for the capability's path/body/query before dispatch. */
+    private resolveArgs;
     get specs(): readonly CapabilitySpec[];
     /** Capabilities currently exposed (group filter + read-only filter). */
     available(): CapabilitySpec[];

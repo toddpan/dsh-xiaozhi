@@ -48,8 +48,15 @@ export interface DshToolDefinition {
 
 // ---------------------------------------------------------------- formatting
 
+/**
+ * Shorten an id for speech. DSH session ids are `session-<uuid>`, so a naive
+ * 8-char slice would collapse *every* session to the identical prefix
+ * `session-` and the voice model could neither tell sessions apart nor call
+ * one back. Strip the prefix first; CapabilityRuntime resolves the short form
+ * (or a title) back to the full id.
+ */
 function shortId(id: unknown): string {
-  const text = String(id ?? '')
+  const text = String(id ?? '').replace(/^session-/, '')
   return text.length > 8 ? text.slice(0, 8) : text
 }
 
@@ -158,7 +165,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
       '管理 DSH 工作区（绑定一个本地目录）。action=list 列出全部工作区；get 看详情；create 新建（需要目录路径）；rename 改标题；delete 删除绑定；sessions 列出该工作区下的会话。',
     properties: {
       action: ACTION(['list', 'get', 'create', 'rename', 'delete', 'sessions'], '要执行的操作'),
-      id: STR('工作区 ID（get/rename/delete/sessions 必填）'),
+      id: STR('工作区 ID、列表里的短 id 或工作区标题（get/rename/delete/sessions 必填）'),
       path: STR('工作区目录的绝对路径（create 必填）'),
       title: STR('工作区标题（create/rename 使用）'),
     },
@@ -212,7 +219,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
   {
     name: 'dsh_sessions',
     description:
-      '管理 DSH 会话。action=list 列出或搜索会话（可用 search 关键词、workspaceId 过滤）；get 看详情与运行状态；create 新建会话（可指定工作区、标题、模型）；update 改标题或模型；delete 删除或归档；cancel 中止当前正在跑的轮次。',
+      '管理 DSH 会话。action=list 列出或搜索会话（可用 search 关键词、workspaceId 过滤）；get 看详情与运行状态；create 新建会话（可指定工作区、标题、模型）；update 改标题或模型；delete 删除或归档；cancel 中止当前正在跑的轮次。id 可用列表返回的短 id（如 4ac05afc）、完整 id 或会话标题。',
     properties: {
       action: ACTION(['list', 'get', 'create', 'update', 'delete', 'cancel'], '要执行的操作'),
       id: STR('会话 ID（get/update/delete/cancel 必填）'),
@@ -296,6 +303,9 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
     groups: ['sessions'],
     capabilities: ['sessions.stats', 'sessions.todos'],
     async run(args, runtime, config) {
+      // Both sub-fetches swallow errors below; a missing session would render
+      // as a confident "空闲 / 任务清单空". Fail on an unknown id up front.
+      await runtime.run('sessions.get', { id: args.id })
       const [stats, todos] = await Promise.all([
         runtime.run('sessions.stats', { id: args.id }).catch(() => undefined),
         runtime.run('sessions.todos', { id: args.id }).catch(() => undefined),
@@ -334,7 +344,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
     description:
       '读取某个 DSH 会话最近的对话历史。用户问“那个会话刚才聊了什么”“上一轮结论是什么”时使用。',
     properties: {
-      id: STR('会话 ID（必填）'),
+      id: STR('会话 ID、列表里的短 id 或会话标题（必填）'),
       maxMessages: NUM('最多返回多少条消息，默认 8'),
       beforeSeq: NUM('只取该序号之前的消息，用于翻页'),
     },
@@ -343,14 +353,30 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
     groups: ['sessions'],
     capabilities: ['sessions.history'],
     async run(args, runtime, config) {
+      // The bundled history route answers 200 + zero messages even for a
+      // *missing* session (its inspect fallbacks swallow the lookup failure),
+      // which would have the assistant claim "还没有历史消息" for an id that
+      // does not exist at all. Confirm existence first; a not-found here is
+      // the speakable, actionable answer.
+      await runtime.run('sessions.get', { id: args.id })
       const data = (await runtime.run('sessions.history', {
         id: args.id,
         maxMessages: args.maxMessages ?? Math.max(4, config.listLimit),
         beforeSeq: args.beforeSeq,
       })) as Record<string, any>
       const messages = asArray(data)
-      if (messages.length === 0) return '该会话还没有历史消息。'
-      const lines = messages.map(raw => {
+      // Tool-only assistant turns carry no text; reading them aloud as
+      // "（无文本内容）" wastes the voice budget on nothing.
+      const withText = messages.filter(raw => {
+        const m = raw as Record<string, any>
+        return String(m.content ?? '').trim() !== ''
+      })
+      if (withText.length === 0) {
+        return messages.length > 0
+          ? `该会话最近的 ${messages.length} 条消息都是工具调用，没有可朗读的文本内容。`
+          : '该会话还没有历史消息。'
+      }
+      const lines = withText.map(raw => {
         const m = raw as Record<string, any>
         const role = m.role === 'user' ? '用户' : m.role === 'assistant' ? 'DSH' : m.role === 'tool' ? '工具' : '系统'
         const text = clip(String(m.content ?? '').replace(/\s+/g, ' ').trim(), 200)
@@ -364,7 +390,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
     description:
       '向一个 DSH 会话发送指令或消息。wait=true（默认）会等整轮完成并返回 DSH 的回复；wait=false 会立即返回、由用户稍后再问进度。用户说“让小智去做…”“告诉那个会话…”时使用。这是一个可能耗时较久的操作。',
     properties: {
-      id: STR('会话 ID（必填）'),
+      id: STR('会话 ID、列表里的短 id 或会话标题（必填）'),
       prompt: STR('要发送给 DSH 的指令或消息（必填）'),
       wait: BOOL('是否等待整轮完成，默认 true'),
       mode: ACTION(['normal', 'steer'], 'normal=新开一轮；steer=插话到正在运行的轮次'),
@@ -415,7 +441,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
       '处理 DSH 会话里等待用户回答的提问。action=list 查看当前挂起的问题及可选项；action=answer 提交答复让会话继续（可用 choice 选一个选项，或用 custom 自由填写，也可用 answers 传 JSON 数组）。',
     properties: {
       action: ACTION(['list', 'answer'], '要执行的操作'),
-      id: STR('会话 ID（必填）'),
+      id: STR('会话 ID、列表里的短 id 或会话标题（必填）'),
       batchId: STR('提问批次 ID（answer 使用，省略则答复最早一批）'),
       choice: STR('选择的选项文本（answer 使用）'),
       custom: STR('自由填写的答复文本（answer 使用）'),
@@ -510,7 +536,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
       '管理 DSH 会话工作区里的文件。action=list 列出目录；action=read 读取一个文本文件的内容；action=upload 上传文件（内容用 base64 或纯文本传入）。',
     properties: {
       action: ACTION(['list', 'read', 'upload'], '要执行的操作'),
-      id: STR('会话 ID（必填）'),
+      id: STR('会话 ID、列表里的短 id 或会话标题（必填）'),
       path: STR('相对于会话工作区的路径；list 省略表示根目录，read/upload 必填'),
       content: STR('文件内容（upload 使用）'),
       encoding: ACTION(['base64', 'utf8'], 'content 的编码方式，默认 base64'),
@@ -531,8 +557,9 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
           const lines = entries.map(raw => {
             if (typeof raw === 'string') return `- ${raw}`
             const e = raw as Record<string, any>
-            const kind = e.type === 'directory' || e.isDirectory ? '目录' : '文件'
-            const size = typeof e.size === 'number' ? ` ${e.size} 字节` : ''
+            // The route answers `type: 'dir' | 'link' | 'file'`.
+            const kind = e.type === 'dir' || e.type === 'directory' || e.isDirectory ? '目录' : e.type === 'link' ? '链接' : '文件'
+            const size = typeof e.size === 'number' && kind === '文件' ? ` ${e.size} 字节` : ''
             return `- ${kind} ${e.name ?? e.path}${size}`
           })
           return renderRows(lines, 40, '条目')
@@ -563,7 +590,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
     name: 'dsh_session_skills',
     description: '查看某个 DSH 会话可用的技能目录（技能名、描述与来源）。',
     properties: {
-      id: STR('会话 ID（必填）'),
+      id: STR('会话 ID、列表里的短 id 或会话标题（必填）'),
       search: STR('按名称或描述过滤'),
     },
     required: ['id'],
@@ -586,7 +613,7 @@ const GROUPED_TOOL_SPECS: readonly GroupedToolSpec[] = [
     description:
       '在几秒内监听某个 DSH 会话发生的事件（工具调用、轮次开始与结束、报错等），用来判断它是否还在干活、刚刚做了什么。',
     properties: {
-      id: STR('会话 ID（必填）'),
+      id: STR('会话 ID、列表里的短 id 或会话标题（必填）'),
       seconds: NUM('监听时长（秒），默认 5，最大 30'),
     },
     required: ['id'],

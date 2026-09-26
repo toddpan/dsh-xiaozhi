@@ -68,7 +68,7 @@ dsh --profile "$DSH_PROFILE" --dump-config | grep -A2 xiaozhi
 ```bash
 cd dsh-xiaozhi
 bash scripts/build.sh
-node --test --test-timeout=30000 "test/*.test.mjs"     # 期望：107 个用例全部通过 / 0 fail
+node --test --test-timeout=30000 "test/*.test.mjs"     # 期望：114 个用例全部通过 / 0 fail
 ```
 
 ---

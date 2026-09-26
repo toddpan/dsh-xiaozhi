@@ -235,7 +235,7 @@ bash scripts/build.sh                     # 需要 DSH 源码 checkout 提供 ts
 node --test --test-timeout=30000 "test/*.test.mjs"
 ```
 
-测试覆盖（**107 个用例**）：
+测试覆盖（**114 个用例**）：
 
 | 文件 | 覆盖内容 |
 | --- | --- |

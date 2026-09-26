@@ -40,6 +40,16 @@ function makeFakeContext() {
       updatedAt: Date.now() - 120_000,
       lastActivityAt: Date.now() - 60_000,
     },
+    {
+      // Production session ids carry the `session-` prefix; keep one here so
+      // the short-id rendering and resolution cover the real shape.
+      sessionId: 'session-deadbeef-1234-5678-9abc-def012345678',
+      title: '性能排查',
+      running: false,
+      createdAt: Date.now() - 3_600_000,
+      updatedAt: Date.now() - 1_800_000,
+      lastActivityAt: Date.now() - 900_000,
+    },
   ]
   const services = {
     workspaceRegistry: {
@@ -48,10 +58,15 @@ function makeFakeContext() {
     },
     sessionController: {
       list: async () => ({ items: sessions }),
-      inspect: async id => ({
-        meta: sessions.find(item => item.sessionId === id) ?? { sessionId: id },
-        events: [],
-      }),
+      // The real controller throws for unknown sessions (the route turns that
+      // into 404); a permissive inspect would mask the "silent empty history"
+      // regression this suite pins.
+      inspect: async id => {
+        if (!sessions.some(item => item.sessionId === id)) {
+          throw new Error(`Session '${id}' not found`)
+        }
+        return { meta: sessions.find(item => item.sessionId === id), events: [] }
+      },
       listEvents: () => [],
     },
     llm: {
@@ -314,4 +329,102 @@ test('refresh() re-weaves the tool list after a config change', async () => {
 
   assert.ok(after.length < before, 'disabling groups must shrink the tool list')
   assert.ok(after.every(tool => !tool.groups.includes('workspaces')))
+})
+
+// ---------------------------------------------------------------------------
+// Id resolution: the voice model only ever sees what the tool results showed
+// it. These tests pin the shapes that flow is built on.
+// ---------------------------------------------------------------------------
+
+function makeResolvingRunner() {
+  const config = resolveConfig({ homeDir: '/tmp/dsh-xiaozhi-test' })
+  const runtime = new CapabilityRuntime({
+    ctx: makeFakeContext(),
+    invoker: makeInvoker(),
+    config: () => config,
+    apiBase: () => API_BASE,
+    mcpStatus: () => ({}),
+    log: () => {},
+  })
+  return new ToolRunner({ runtime, config: () => config })
+}
+
+test('session rows strip the `session-` prefix so short ids stay distinct', async () => {
+  const runner = makeResolvingRunner()
+  const listed = await runner.call('dsh_sessions', { action: 'list' })
+  assert.equal(listed.isError, false)
+  // `session-deadbeef-…` must render as `[deadbeef]`, not the useless
+  // shared prefix `[session-]` that every production session used to show.
+  assert.match(listed.content[0].text, /\[deadbeef\]/)
+  assert.match(listed.content[0].text, /\[sess-123\]/)
+  assert.doesNotMatch(listed.content[0].text, /\[session-\]/)
+})
+
+test('short ids, titles and full ids all resolve to the same session', async () => {
+  const runner = makeResolvingRunner()
+
+  const byShort = await runner.call('dsh_sessions', { action: 'get', id: 'deadbeef' })
+  assert.equal(byShort.isError, false)
+  assert.match(byShort.content[0].text, /性能排查/)
+
+  const byTitle = await runner.call('dsh_sessions', { action: 'get', id: '性能排查' })
+  assert.equal(byTitle.isError, false)
+  assert.match(byTitle.content[0].text, /性能排查/)
+
+  const byFull = await runner.call('dsh_sessions', { action: 'get', id: 'session-deadbeef-1234-5678-9abc-def012345678' })
+  assert.equal(byFull.isError, false)
+  assert.match(byFull.content[0].text, /性能排查/)
+})
+
+test('an ambiguous reference fails with the candidates, not a wrong session', async () => {
+  const runner = makeResolvingRunner()
+  // Both ids contain an `s`, so the fragment alone cannot pick one.
+  const ambiguous = await runner.call('dsh_session_history', { id: 's' })
+  assert.equal(ambiguous.isError, true)
+  assert.match(ambiguous.content[0].text, /匹配到 2 个/)
+  assert.match(ambiguous.content[0].text, /deadbeef/)
+  assert.match(ambiguous.content[0].text, /sess-123/)
+})
+
+test('a missing session never answers “还没有历史消息”', async () => {
+  const runner = makeResolvingRunner()
+  const missing = await runner.call('dsh_session_history', { id: 'nosuchid' })
+  assert.equal(missing.isError, true)
+  assert.match(missing.content[0].text, /找不到会话/)
+  assert.doesNotMatch(missing.content[0].text, /还没有历史消息/)
+
+  // Same for the progress tool: no confident "空闲" for a session that
+  // does not exist.
+  const progress = await runner.call('dsh_session_progress', { id: 'nosuchid' })
+  assert.equal(progress.isError, true)
+  assert.match(progress.content[0].text, /找不到会话/)
+})
+
+test('an existing-but-empty session still says it has no history', async () => {
+  const runner = makeResolvingRunner()
+  const empty = await runner.call('dsh_session_history', { id: '性能排查' })
+  assert.equal(empty.isError, false)
+  assert.match(empty.content[0].text, /还没有历史消息/)
+})
+
+test('workspace sessions matches controller items keyed by sessionId', async () => {
+  const runner = makeResolvingRunner()
+  // The controller list payload uses `sessionId`; the route must read that
+  // spelling or every workspace would answer "没有会话".
+  const listed = await runner.call('dsh_workspaces', { action: 'sessions', id: 'ws-abcdefgh' })
+  assert.equal(listed.isError, false)
+  assert.match(listed.content[0].text, /修复构建失败/)
+  // The projection must map the controller's `sessionId` onto `id`, so the
+  // row carries a usable short id instead of a literal "undefined".
+  assert.match(listed.content[0].text, /\[sess-123\]/)
+  assert.doesNotMatch(listed.content[0].text, /undefined/)
+})
+
+test('history skips text-less tool turns instead of reading “（无文本内容）”', async () => {
+  const runner = makeResolvingRunner()
+  // The copied history route projects only user/assistant text; with the fake
+  // host returning none, the tool must not invent rows for empty content.
+  const empty = await runner.call('dsh_session_history', { id: 'sess-1234abcd-5678' })
+  assert.equal(empty.isError, false)
+  assert.doesNotMatch(empty.content[0].text, /无文本内容/)
 })

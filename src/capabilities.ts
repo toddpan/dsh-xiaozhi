@@ -584,6 +584,93 @@ export interface CapabilityRuntimeDeps {
 export class CapabilityRuntime {
   constructor(private readonly deps: CapabilityRuntimeDeps) {}
 
+  // ------------------------------------------------------------ id resolution
+
+  private refCache?: {
+    at: number
+    promise: Promise<{ sessions: { id: string; title: string }[]; workspaces: { id: string; title: string }[] }>
+  }
+
+  /**
+   * Voice-facing ids are lossy on purpose (`dsh_session_history` says
+   * `4ac05afc`, a title, or a fragment of either), so every id-bearing
+   * capability expands what it receives back to the full id before dispatch.
+   * Resolution is prefix/substring based against the live list; one match
+   * resolves, several match is a speakable ambiguity error, none is a
+   * speakable not-found. Fetch failures fail *open* (the raw id is passed
+   * through) so a list hiccup cannot break full-id callers.
+   */
+  private refIndex(): Promise<{ sessions: { id: string; title: string }[]; workspaces: { id: string; title: string }[] }> {
+    const cached = this.refCache
+    if (cached && Date.now() - cached.at < 2_000) return cached.promise
+    const config = this.deps.config()
+    const sessionsSpec = getCapability('sessions.list')!
+    const workspacesSpec = getCapability('workspaces.list')!
+    const promise = (async () => {
+      const [sessions, workspaces] = await Promise.all([
+        this.dispatchRest(sessionsSpec, {}, config).catch(() => []),
+        this.dispatchRest(workspacesSpec, {}, config).catch(() => []),
+      ])
+      const rows = (value: unknown): { id: string; title: string }[] =>
+        (Array.isArray(value) ? value : []).map((raw: any) => ({ id: String(raw?.id ?? ''), title: String(raw?.title ?? '') })).filter(row => row.id !== '')
+      return { sessions: rows(sessions), workspaces: rows(workspaces) }
+    })()
+    this.refCache = { at: Date.now(), promise }
+    return promise
+  }
+
+  private async resolveRef(kind: 'session' | 'workspace', raw: unknown): Promise<unknown> {
+    const text = String(raw ?? '').trim()
+    if (text === '') return raw
+    let index: { sessions: { id: string; title: string }[]; workspaces: { id: string; title: string }[] }
+    try {
+      index = await this.refIndex()
+    } catch {
+      return raw
+    }
+    const rows = kind === 'session' ? index.sessions : index.workspaces
+    if (rows.some(row => row.id === text)) return text
+    const lowered = text.toLowerCase()
+    const matches = rows.filter(
+      row => row.id.toLowerCase().includes(lowered) ||
+        (row.title !== '' && (row.title === text || row.title.toLowerCase().includes(lowered))),
+    )
+    if (matches.length === 1) return matches[0].id
+    const noun = kind === 'session' ? '会话' : '工作区'
+    if (matches.length > 1) {
+      const shown = matches.slice(0, 5).map(row => shortRefId(row.id)).join('、')
+      throw new CapabilityError(
+        `${noun} "${clip(text, 40)}" 匹配到 ${matches.length} 个（${shown}${matches.length > 5 ? ' 等' : ''}），` +
+          '请改用列表里更完整的短 id 或更精确的标题',
+        undefined,
+        400,
+      )
+    }
+    throw new CapabilityError(
+      `找不到${noun} "${clip(text, 40)}"。请先用列表动作查看现有的${noun}短 id。`,
+      undefined,
+      404,
+    )
+  }
+
+  /** Expand ids for the capability's path/body/query before dispatch. */
+  private async resolveArgs(spec: CapabilitySpec, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const resolved = { ...args }
+    if (spec.pathParams.includes('id')) {
+      resolved.id = await this.resolveRef(spec.group === 'workspaces' ? 'workspace' : 'session', resolved.id)
+    }
+    if (spec.queryParams.includes('workspaceId') && resolved.workspaceId !== undefined) {
+      resolved.workspaceId = await this.resolveRef('workspace', resolved.workspaceId)
+    }
+    if (spec.bodyFields.includes('workspaceId') && resolved.workspaceId !== undefined) {
+      resolved.workspaceId = await this.resolveRef('workspace', resolved.workspaceId)
+    }
+    if (spec.bodyFields.includes('sessionId') && resolved.sessionId !== undefined) {
+      resolved.sessionId = await this.resolveRef('session', resolved.sessionId)
+    }
+    return resolved
+  }
+
   get specs(): readonly CapabilitySpec[] {
     return CAPABILITIES
   }
@@ -613,14 +700,16 @@ export class CapabilityRuntime {
       switch (id) {
         case 'system.status':
           return await this.systemStatus()
-        case 'sessions.events':
-          return await this.sessionEvents(args, config)
+        case 'sessions.events': {
+          const withId = await this.resolveArgs(getCapability('sessions.events')!, args)
+          return await this.sessionEvents(withId, config)
+        }
         case 'docs.info':
           return this.docsInfo()
         case 'docs.openapi':
           return await this.openApiSummary()
         default:
-          return await this.dispatchRest(spec, args, config)
+          return await this.dispatchRest(spec, await this.resolveArgs(spec, args), config)
       }
     } catch (err) {
       if (err instanceof CapabilityError) throw err
@@ -888,6 +977,12 @@ function summarizeEvent(event: any): string {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** Mirror of the tool layer's `shortId`: strip the `session-` prefix, then 8 chars. */
+function shortRefId(id: string): string {
+  const text = id.replace(/^session-/, '')
+  return text.length > 8 ? text.slice(0, 8) : text
 }
 
 function requireString(value: unknown, name: string): string {

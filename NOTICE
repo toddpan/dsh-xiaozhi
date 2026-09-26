@@ -9,15 +9,16 @@ This plugin is a fork of **`@dsh-external/dsh-web-service` v0.1.11**
 (`https://github.com/toddpan/dsh-webapi`), licensed BSD-3-Clause,
 Copyright (c) 2026 toddpan (潘祖继).
 
-The files under `src/dshapi/` are a **verbatim copy** of that project's
-`src/dshapi/` directory. They are deliberately left unmodified so the copy can
-be diffed against upstream:
+The files under `src/dshapi/` are a copy of that project's `src/dshapi/`
+directory. They are deliberately left unmodified wherever possible so the copy
+can still be diffed against upstream. **One file carries a documented local
+patch** (`workspaces.ts`, see the note column and §Local patches below):
 
 | copied file | origin | note |
 | --- | --- | --- |
 | `src/dshapi/router.ts` | upstream `src/dshapi/router.ts` | `HttpRouter`, `sendJson`, body readers |
 | `src/dshapi/types.ts` | upstream | response envelope types |
-| `src/dshapi/workspaces.ts` | upstream | `/workspaces*` routes |
+| `src/dshapi/workspaces.ts` | upstream, **locally patched** | `/workspaces*` routes; see §Local patches |
 | `src/dshapi/sessions.ts` | upstream | `/sessions*` routes |
 | `src/dshapi/models.ts` | upstream | `/models`, `/providers`, `/presets` |
 | `src/dshapi/streaming.ts` | upstream | `/prompt`, `/prompt-stream`, SSE |
@@ -29,7 +30,17 @@ be diffed against upstream:
 
 `src/dshapi/service.ts` is **new** in this fork. It is the single seam that
 assembles the copied route modules into one router, so upstream changes remain
-a clean three-way diff. No copied file is patched.
+a clean three-way diff.
+
+### Local patches to copied files
+
+One hunk in `src/dshapi/workspaces.ts`, marked inline with a
+`Local patch (upstream copy)` comment. `GET /workspaces/:id/sessions` matched
+controller session summaries on `s.id`, but those items are keyed `sessionId`,
+so the route always answered an empty `sessions` array (the sibling
+`sessions.ts` reads `s.sessionId || s.id` for the same payload). It now reads
+`s.sessionId ?? s.id`. Worth reporting upstream: it affects
+`@dsh-external/dsh-web-service` too, not just this fork.
 
 ## What this fork changes
 
