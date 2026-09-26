@@ -54,7 +54,7 @@ DSH Web 的能力都在 HTTP REST 接口上，而小智只认 **MCP**（Model Co
 1. **安装插件**（在本仓库目录下执行）：
 
    ```bash
-   dsh plugin add /Users/tsbj/feyanggit/DHS-test/dsh-xiaozhi
+   dsh plugin add https://github.com/toddpan/dsh-xiaozhi
    ```
 
    也可以在 DSH Web 的「设置 → 插件」里用「安装本地目录」选择该目录。

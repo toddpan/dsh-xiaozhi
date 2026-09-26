@@ -56,7 +56,7 @@ its **MCP access point** page open.
 1. **Install** from this directory:
 
    ```bash
-   dsh plugin add /Users/tsbj/feyanggit/DHS-test/dsh-xiaozhi
+   dsh plugin add https://github.com/toddpan/dsh-xiaozhi
    ```
 
    Or use "install from a local directory" under Settings → Plugins in DSH Web.

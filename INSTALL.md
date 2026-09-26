@@ -22,7 +22,7 @@ Design notes live in [README.md](./README.md).
 
 ```bash
 # 方式 A：CLI
-dsh plugin add /Users/tsbj/feyanggit/DHS-test/dsh-xiaozhi
+dsh plugin add https://github.com/toddpan/dsh-xiaozhi
 
 # 方式 B：在 DSH Web「设置 → 插件」中选择该目录安装
 ```
