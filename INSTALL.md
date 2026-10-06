@@ -11,7 +11,7 @@ Design notes live in [README.md](./README.md).
 
 | 项 | 要求 |
 | --- | --- |
-| DSH | 已运行 `dsh web`（默认 `http://127.0.0.1:3080`），profile 建议 `web` |
+| DSH | 已运行 `dsh web`（默认 `http://127.0.0.1:3080`），profile 建议 `web`；兼容 DSH `0.1.0`–`0.2.x`（peer 范围见 `package.json`） |
 | 小智 | 有账号，能打开「MCP 接入点」页面复制 WebSocket 地址 |
 | 构建 | 仅安装则**不需要**；改源码时需要 DSH 源码 checkout 提供 `tsc` |
 | 运行时依赖 | 仅 Node 内置模块（**不依赖** `ws`、也**不依赖** `@dsh-external/dsh-web-service`） |
