@@ -25,6 +25,9 @@ Design notes live in [README.md](./README.md).
 dsh plugin add https://github.com/toddpan/dsh-xiaozhi
 
 # 方式 B：在 DSH Web「设置 → 插件」中选择该目录安装
+
+# 方式 C：预构建 tarball（固定版本，免 git 抓取）
+dsh plugin add https://github.com/toddpan/dsh-xiaozhi/releases/download/v0.2.1/dsh-xiaozhi-0.2.1.tgz
 ```
 
 安装后确认：
