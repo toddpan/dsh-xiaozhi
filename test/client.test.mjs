@@ -23,6 +23,8 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const require = createRequire(import.meta.url)
 
+const pkgName = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).name
+
 let React
 let renderToStaticMarkup
 try {
@@ -61,7 +63,7 @@ function loadClient() {
   }
   new Function('window', 'require', source)({ __ModuleLoader__: loader }, requireStub)
   assert.ok(registered, 'client.js did not call window.__ModuleLoader__.load')
-  assert.equal(registered.id, 'dsh-xiaozhi', 'the module id must equal the package name')
+  assert.equal(registered.id, pkgName, 'the module id must equal the package name')
   const mod = registered.factory(requireStub)
   assert.ok(mod.__test, 'the bundle did not expose __test internals')
   assert.deepEqual(mod.inject, ['slots', 'locale'])

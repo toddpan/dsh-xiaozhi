@@ -9,5 +9,5 @@
 # separately (see README "配置分层").
 - insert:
     - id: dsh-xiaozhi
-      name: dsh-xiaozhi
+      name: xiaozhi-dsh
       config: {}
