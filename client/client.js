@@ -10,7 +10,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: 'dsh-xiaozhi',
+  id: 'xiaozhi-dsh',
   factory(require) {
     const React = require('react')
     const h = React.createElement
